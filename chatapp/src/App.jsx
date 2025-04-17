@@ -6,14 +6,15 @@ import './App.css'
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/chat" element={<ChatPage />} />
-        <Route path="/" element={<Navigate to="/login" replace />} />
-      </Routes>
-    </Router>
+    <h1>Hello World</h1>
+    // <Router>
+    //   <Routes>
+    //     <Route path="/login" element={<Login />} />
+    //     <Route path="/register" element={<Register />} />
+    //     <Route path="/chat" element={<ChatPage />} />
+    //     <Route path="/" element={<Navigate to="/login" replace />} />
+    //   </Routes>
+    // </Router>
   );
 }
 
