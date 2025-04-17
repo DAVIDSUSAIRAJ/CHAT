@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -64,10 +64,10 @@ const Login = () => {
         </form>
         
         <div className="auth-links">
-          <a href="#" className="reset-link">reset password</a>
+          <Link to="/reset-password" className="reset-link">reset password</Link>
           <div>
             Don't have an account?{' '}
-            <a href="/register">Sign up here</a>
+            <Link to="/register">Sign up here</Link>
           </div>
         </div>
       </div>
