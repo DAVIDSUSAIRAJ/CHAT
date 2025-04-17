@@ -19,70 +19,64 @@ const ChatWindow = ({ selectedUser }) => {
     fetchCurrentUser();
   }, []);
 
+  // Fetch messages function
+  const fetchMessages = async () => {
+    if (!selectedUser || !currentUser) return;
+
+    const { data, error } = await supabase
+      .from('chat')
+      .select('*')
+      .or(`sender_id.eq.${currentUser.id},sender_id.eq.${selectedUser.id}`)
+      .or(`receiver_id.eq.${currentUser.id},receiver_id.eq.${selectedUser.id}`)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching messages:', error);
+      return;
+    }
+
+    const filteredMessages = data.filter(
+      message => 
+        (message.sender_id === currentUser.id && message.receiver_id === selectedUser.id) ||
+        (message.sender_id === selectedUser.id && message.receiver_id === currentUser.id)
+    );
+
+    setMessages(filteredMessages);
+    scrollToBottom();
+  };
+
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
 
-    // Fetch existing messages
-    const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from('chat')
-        .select('*')
-        .or(`sender_id.eq.${currentUser.id},sender_id.eq.${selectedUser.id}`)
-        .or(`receiver_id.eq.${currentUser.id},receiver_id.eq.${selectedUser.id}`)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching messages:', error);
-        return;
-      }
-
-      const filteredMessages = data.filter(
-        message => 
-          (message.sender_id === currentUser.id && message.receiver_id === selectedUser.id) ||
-          (message.sender_id === selectedUser.id && message.receiver_id === currentUser.id)
-      );
-
-      setMessages(filteredMessages);
-      scrollToBottom();
-    };
-
+    // Initial fetch
     fetchMessages();
 
-    // Create a unique channel name for this conversation
-    const channelName = `chat_${[currentUser.id, selectedUser.id].sort().join('_')}`;
-    console.log('Subscribing to channel:', channelName);
-
-    // Subscribe to the broadcast channel
-    const channel = supabase.channel(channelName)
-      .on('broadcast', { event: 'message' }, (payload) => {
-        console.log('Received broadcast:', payload);
-        fetchMessages(); // Fetch all messages when we receive a broadcast
-      })
-      .subscribe((status) => {
-        console.log(`Subscription status for ${channelName}:`, status);
-      });
-
-    // Also subscribe to database changes as backup
-    const dbChannel = supabase.channel('db_changes')
+    // Subscribe to realtime changes
+    const subscription = supabase
+      .channel('chat_changes')
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'chat',
-          filter: `receiver_id=eq.${currentUser.id}`
+          filter: `receiver_id=eq.${currentUser.id}`,
         },
-        () => {
-          console.log('Database change detected, fetching messages');
-          fetchMessages();
+        (payload) => {
+          console.log('Received realtime update:', payload);
+          if (payload.new.sender_id === selectedUser.id) {
+            setMessages(prev => [...prev, payload.new]);
+            scrollToBottom();
+          }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+      });
 
     return () => {
-      console.log('Cleaning up subscriptions');
-      channel.unsubscribe();
-      dbChannel.unsubscribe();
+      console.log('Cleaning up subscription');
+      subscription.unsubscribe();
     };
   }, [selectedUser, currentUser]);
 
@@ -98,39 +92,23 @@ const ChatWindow = ({ selectedUser }) => {
         created_at: new Date().toISOString()
       };
 
+      // Clear input immediately for better UX
       setNewMessage('');
 
-      // Send message to database
+      // Add message to local state immediately
+      setMessages(prev => [...prev, messageToSend]);
+      scrollToBottom();
+
+      // Send to database
       const { error } = await supabase
         .from('chat')
         .insert([messageToSend]);
 
-      if (error) throw error;
-
-      // Broadcast to channel
-      const channelName = `chat_${[currentUser.id, selectedUser.id].sort().join('_')}`;
-      await supabase.channel(channelName).send({
-        type: 'broadcast',
-        event: 'message',
-        payload: { message: messageToSend }
-      });
-
-      // Fetch latest messages
-      const { data, error: fetchError } = await supabase
-        .from('chat')
-        .select('*')
-        .or(`sender_id.eq.${currentUser.id},sender_id.eq.${selectedUser.id}`)
-        .or(`receiver_id.eq.${currentUser.id},receiver_id.eq.${selectedUser.id}`)
-        .order('created_at', { ascending: true });
-
-      if (!fetchError && data) {
-        const filteredMessages = data.filter(
-          message => 
-            (message.sender_id === currentUser.id && message.receiver_id === selectedUser.id) ||
-            (message.sender_id === selectedUser.id && message.receiver_id === currentUser.id)
-        );
-        setMessages(filteredMessages);
-        scrollToBottom();
+      if (error) {
+        console.error('Error sending message:', error);
+        // Optionally remove the message from local state if send failed
+        setMessages(prev => prev.filter(msg => msg !== messageToSend));
+        alert('Failed to send message. Please try again.');
       }
     } catch (error) {
       console.error('Error sending message:', error);
