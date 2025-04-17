@@ -9,10 +9,10 @@ function App() {
     <div className="app">
       <Router>
         <Routes>
-          <Route exact path="/login" element={<Login />} />
-          <Route exact path="/register" element={<Register />} />
-          <Route exact path="/chat" element={<ChatPage />} />
-          <Route exact path="/" element={<Navigate to="/login" />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/" element={<Navigate to="/login" />} />
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
       </Router>
