@@ -28,6 +28,7 @@ const Register = () => {
             id: authData.user.id,
             username,
             email,
+            password,
           },
         ]);
 
