@@ -1,74 +1,101 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import '../../styles/auth.css';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setLoading(true);
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes('email')) {
+          emailRef.current.focus();
+        } else if (error.message.includes('password')) {
+          passwordRef.current.focus();
+        }
+        throw error;
+      }
       navigate('/chat');
     } catch (error) {
-      setError(error.message);
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="auth-container">
-      <div className="auth-box">
+      <div className="auth-card">
         <div className="auth-header">
-          <h1>ChatApp</h1>
-          <div className="auth-logo">•••</div>
+          <h1 className="auth-title">Welcome Back</h1>
+          <p className="auth-subtitle">Sign in to continue chatting</p>
         </div>
-        
-        <form onSubmit={handleLogin}>
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
-          
-          <div className="input-group">
+
+        <form onSubmit={handleLogin} className="auth-form">
+          <div className="auth-input-group">
             <input
+              ref={emailRef}
+              id="email"
               type="email"
-              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className="auth-input"
+              placeholder="Enter your email"
               required
             />
           </div>
-          
-          <div className="input-group">
+
+          <div className="auth-input-group">
             <input
+              ref={passwordRef}
+              id="password"
               type="password"
-              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className="auth-input"
+              placeholder="Enter your password"
               required
             />
           </div>
-          
-          <button type="submit" className="btn">
-            LOGIN NOW
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="auth-button"
+          >
+            {loading ? (
+              <>
+                <span className="auth-loading"></span>
+                <span>Signing in...</span>
+              </>
+            ) : (
+              'Sign in'
+            )}
           </button>
         </form>
-        
-        <div className="auth-links">
-          <Link to="/reset-password" className="reset-link">reset password</Link>
-          <div>
+
+        <div className="auth-bottom-text">
+          <p>
             Don't have an account?{' '}
-            <Link to="/register">Sign up here</Link>
-          </div>
+            <Link to="/register" className="auth-link">
+              Sign up
+            </Link>
+          </p>
         </div>
       </div>
     </div>

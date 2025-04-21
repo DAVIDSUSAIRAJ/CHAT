@@ -1,105 +1,139 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import '../../styles/auth.css';
 
 const Register = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(null);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const usernameRef = useRef(null);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
+  const confirmPasswordRef = useRef(null);
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    setLoading(true);
+
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match');
+      confirmPasswordRef.current.focus();
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Sign up the user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
       });
 
-      if (authError) throw authError;
-
-      // Insert user details into users table
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert([
-          {
-            id: authData.user.id,
-            username,
-            email,
-            password,
-          },
-        ]);
-
-      if (profileError) throw profileError;
+      if (authError) {
+        if (authError.message.includes('email')) {
+          emailRef.current.focus();
+        } else if (authError.message.includes('password')) {
+          passwordRef.current.focus();
+        }
+        throw authError;
+      }
 
       navigate('/chat');
     } catch (error) {
-      setError(error.message);
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="auth-container">
-      <div className="auth-box">
+      <div className="auth-card">
         <div className="auth-header">
-          <h1>Sign up</h1>
-          <div className="auth-logo">•••</div>
+          <h1 className="auth-title">Create Account</h1>
+          <p className="auth-subtitle">Join our chat community today</p>
         </div>
 
-        <form onSubmit={handleRegister}>
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
-
-          <div className="input-group">
+        <form onSubmit={handleRegister} className="auth-form">
+          <div className="auth-input-group">
             <input
+              ref={usernameRef}
+              id="username"
               type="text"
-              placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              className="auth-input"
+              placeholder="Enter your name"
               required
             />
           </div>
 
-          <div className="input-group">
+          <div className="auth-input-group">
             <input
+              ref={emailRef}
+              id="email"
               type="email"
-              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className="auth-input"
+              placeholder="Enter your email"
               required
             />
           </div>
 
-          <div className="input-group">
+          <div className="auth-input-group">
             <input
+              ref={passwordRef}
+              id="password"
               type="password"
-              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className="auth-input"
+              placeholder="Create a password"
               required
             />
           </div>
 
-          <div className="input-group checkbox-group">
-            <label>
-              <input type="checkbox" required />
-              <span>Agree to the terms of use & privacy policy.</span>
-            </label>
+          <div className="auth-input-group">
+            <input
+              ref={confirmPasswordRef}
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="auth-input"
+              placeholder="Confirm your password"
+              required
+            />
           </div>
 
-          <button type="submit" className="btn">
-            CREATE ACCOUNT
+          <button
+            type="submit"
+            disabled={loading}
+            className="auth-button"
+          >
+            {loading ? (
+              <>
+                <span className="auth-loading"></span>
+                <span>Creating account...</span>
+              </>
+            ) : (
+              'Create account'
+            )}
           </button>
         </form>
 
-        <div className="auth-links">
-          Already have an account?{' '}
-          <a href="/login">Login here</a>
+        <div className="auth-bottom-text">
+          <p>
+            Already have an account?{' '}
+            <Link to="/login" className="auth-link">
+              Sign in
+            </Link>
+          </p>
         </div>
       </div>
     </div>

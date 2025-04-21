@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import ChatPage from './pages/ChatPage';
@@ -16,6 +18,7 @@ function App() {
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
       </Router>
+      <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
 }
