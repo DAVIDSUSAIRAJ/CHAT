@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 
 const ChatList = ({ onSelectUser, selectedUserId }) => {
   const [users, setUsers] = useState([]);
+  const subscriptionRef = useRef(null);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -26,6 +27,51 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
     };
 
     fetchUsers();
+
+    // Setup real-time subscription for users table
+    const setupSubscription = async () => {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      
+      if (currentUser) {
+        // Cleanup previous subscription if exists
+        if (subscriptionRef.current) {
+          subscriptionRef.current.unsubscribe();
+        }
+
+        const channel = supabase.channel('public:users')
+          .on(
+            'postgres_changes',
+            {
+              event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
+              schema: 'public',
+              table: 'users'
+            },
+            async (payload) => {
+              // Refetch the entire users list when any change occurs
+              const { data, error } = await supabase
+                .from('users')
+                .select('id, username, email')
+                .neq('id', currentUser.id);
+
+              if (data && !error) {
+                setUsers(data);
+              }
+            }
+          )
+          .subscribe();
+
+        subscriptionRef.current = channel;
+      }
+    };
+
+    setupSubscription();
+
+    // Cleanup subscription on component unmount
+    return () => {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.unsubscribe();
+      }
+    };
   }, []);
 
   return (
