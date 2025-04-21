@@ -9,8 +9,14 @@ const ChatWindow = ({ selectedUser }) => {
   const subscriptionRef = useRef(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   // Fetch current user
   useEffect(() => {
@@ -34,7 +40,6 @@ const ChatWindow = ({ selectedUser }) => {
     if (error) return;
 
     setMessages(data || []);
-    scrollToBottom();
   };
 
   // Setup real-time subscription
@@ -76,7 +81,6 @@ const ChatWindow = ({ selectedUser }) => {
                 if (messageExists) return prevMessages;
                 return [...prevMessages, newMessage];
               });
-              scrollToBottom();
             }
           }
         )
@@ -117,8 +121,6 @@ const ChatWindow = ({ selectedUser }) => {
         alert('Failed to send message. Please try again.');
         return;
       }
-
-      scrollToBottom();
     } catch (error) {
       alert('Failed to send message. Please try again.');
     }
