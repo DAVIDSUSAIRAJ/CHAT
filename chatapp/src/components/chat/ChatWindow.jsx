@@ -56,15 +56,17 @@ const ChatWindow = ({ selectedUser }) => {
 
     try {
       // Setup new subscription
-      const channel = supabase.channel('public:chat')
+      const channel = supabase.channel('public:chat')//// Channel name
         .on(
-          'postgres_changes',
+          'postgres_changes',// // Listen for database changes
           {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'chat'
+            event: '*',// Listen only for new inserts,updates,deletes
+            schema: 'public',// Database schema
+            table: 'chat'// Table name
           },
-          async (payload) => {
+          async (payload) => {//// This is like event handler
+              // When new message comes, this function runs
+             // Like click event handler runs when button clicked
             if (!payload.new || !payload.new.id) return;
 
             const newMessage = payload.new;
