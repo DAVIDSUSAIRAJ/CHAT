@@ -6,11 +6,13 @@ const ChatWindow = ({ selectedUser }) => {
   const [newMessage, setNewMessage] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const messagesEndRef = useRef(null);
+  const subscriptionRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Fetch current user
   useEffect(() => {
     const fetchCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -26,57 +28,69 @@ const ChatWindow = ({ selectedUser }) => {
     const { data, error } = await supabase
       .from('chat')
       .select('*')
-      .or(`sender_id.eq.${currentUser.id},sender_id.eq.${selectedUser.id}`)
-      .or(`receiver_id.eq.${currentUser.id},receiver_id.eq.${selectedUser.id}`)
+      .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedUser.id}),and(sender_id.eq.${selectedUser.id},receiver_id.eq.${currentUser.id})`)
       .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching messages:', error);
-      return;
-    }
+    if (error) return;
 
-    const filteredMessages = data.filter(
-      message => 
-        (message.sender_id === currentUser.id && message.receiver_id === selectedUser.id) ||
-        (message.sender_id === selectedUser.id && message.receiver_id === currentUser.id)
-    );
-
-    setMessages(filteredMessages);
+    setMessages(data || []);
     scrollToBottom();
   };
 
+  // Setup real-time subscription
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
+
+    // Cleanup previous subscription if exists
+    if (subscriptionRef.current) {
+      subscriptionRef.current.unsubscribe();
+    }
 
     // Initial fetch
     fetchMessages();
 
-    // Subscribe to realtime changes
-    const subscription = supabase
-      .channel('chat_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'chat',
-          filter: `receiver_id=eq.${currentUser.id}`,
-        },
-        (payload) => {
-          console.log('Received realtime update:', payload);
-          if (payload.new.sender_id === selectedUser.id) {
-            setMessages(prev => [...prev, payload.new]);
-            scrollToBottom();
+    try {
+      // Setup new subscription
+      const channel = supabase.channel('public:chat')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'chat'
+          },
+          async (payload) => {
+            if (!payload.new || !payload.new.id) return;
+
+            const newMessage = payload.new;
+
+            // Check if message belongs to current chat
+            const isRelevantMessage = 
+              (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
+              (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
+
+            if (isRelevantMessage) {
+              // Check if message already exists in the state
+              setMessages(prevMessages => {
+                const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
+                if (messageExists) return prevMessages;
+                return [...prevMessages, newMessage];
+              });
+              scrollToBottom();
+            }
           }
-        }
-      )
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status);
-      });
+        )
+        .subscribe();
+
+      subscriptionRef.current = channel;
+    } catch (error) {
+      // Handle error silently
+    }
 
     return () => {
-      console.log('Cleaning up subscription');
-      subscription.unsubscribe();
+      if (subscriptionRef.current) {
+        subscriptionRef.current.unsubscribe();
+      }
     };
   }, [selectedUser, currentUser]);
 
@@ -84,34 +98,28 @@ const ChatWindow = ({ selectedUser }) => {
     e.preventDefault();
     if (!newMessage.trim() || !currentUser || !selectedUser) return;
 
+    const messageToSend = {
+      sender_id: currentUser.id,
+      receiver_id: selectedUser.id,
+      message: newMessage.trim()
+    };
+
+    setNewMessage('');
+
     try {
-      const messageToSend = {
-        sender_id: currentUser.id,
-        receiver_id: selectedUser.id,
-        message: newMessage.trim(),
-        created_at: new Date().toISOString()
-      };
-
-      // Clear input immediately for better UX
-      setNewMessage('');
-
-      // Add message to local state immediately
-      setMessages(prev => [...prev, messageToSend]);
-      scrollToBottom();
-
-      // Send to database
       const { error } = await supabase
         .from('chat')
-        .insert([messageToSend]);
+        .insert([messageToSend])
+        .select()
+        .single();
 
       if (error) {
-        console.error('Error sending message:', error);
-        // Optionally remove the message from local state if send failed
-        setMessages(prev => prev.filter(msg => msg !== messageToSend));
         alert('Failed to send message. Please try again.');
+        return;
       }
+
+      scrollToBottom();
     } catch (error) {
-      console.error('Error sending message:', error);
       alert('Failed to send message. Please try again.');
     }
   };
