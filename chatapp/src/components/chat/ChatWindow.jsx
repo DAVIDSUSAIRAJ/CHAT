@@ -30,7 +30,9 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
   const [uploading, setUploading] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [mediaSearchText, setMediaSearchText] = useState('');
   const [filteredMessages, setFilteredMessages] = useState([]);
+  const [filteredMediaFiles, setFilteredMediaFiles] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
   const [mediaFiles, setMediaFiles] = useState([]);
@@ -248,6 +250,20 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
   }, [searchText, messages]);
 
   useEffect(() => {
+    if (!mediaSearchText.trim()) {
+      setFilteredMediaFiles(mediaFiles);
+      return;
+    }
+
+    const searchLower = mediaSearchText.toLowerCase();
+    const filtered = mediaFiles.filter(file => 
+      file.file_name?.toLowerCase().includes(searchLower) ||
+      file.message?.toLowerCase().includes(searchLower)
+    );
+    setFilteredMediaFiles(filtered);
+  }, [mediaSearchText, mediaFiles]);
+
+  useEffect(() => {
     if (messages.length > 0) {
       const media = messages.filter(msg => msg.file_url).map(msg => ({
         ...msg,
@@ -256,6 +272,7 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
               msg.file_type?.startsWith('audio/') ? 'audio' : 'file'
       }));
       setMediaFiles(media);
+      setFilteredMediaFiles(media);
     }
   }, [messages]);
 
@@ -270,7 +287,6 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
 
     return (
       <div className="file-message">
-        {isMobileView ? (
           <>
             {isImage && (
               <div className="media-preview">
@@ -300,16 +316,7 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
                download={message.file_name}>
               {message.message}
             </a>
-          </>
-        ) : (
-          <a href={message.file_url} 
-             target="_blank" 
-             rel="noopener noreferrer" 
-             className="file-link"
-             download={message.file_name}>
-            {message.message}
-          </a>
-        )}
+          </> 
       </div>
     );
   };
@@ -383,10 +390,31 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
               <CloseIcon />
             </button>
           </div>
+          <div className="gallery-search">
+            <div className="search-icon">
+              {mediaSearchText ? (
+                <button 
+                  className="clear-search" 
+                  onClick={() => setMediaSearchText('')}
+                >
+                  <CloseIcon />
+                </button>
+              ) : (
+                <SearchIcon />
+              )}
+            </div>
+            <input
+              type="text"
+              value={mediaSearchText}
+              onChange={(e) => setMediaSearchText(e.target.value)}
+              placeholder="Search media..."
+              className="search-input"
+            />
+          </div>
           <div className="gallery-content">
-            {mediaFiles.length > 0 ? (
+            {filteredMediaFiles.length > 0 ? (
               <div className="media-grid">
-                {mediaFiles.map((file, index) => (
+                {filteredMediaFiles.map((file, index) => (
                   <div key={index} className="media-item">
                     {file.type === 'image' && (
                       <img 
@@ -424,7 +452,7 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
               </div>
             ) : (
               <div className="no-media">
-                <p>No media files shared yet</p>
+                <p>No media files found</p>
               </div>
             )}
           </div>
