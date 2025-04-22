@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 
 const ChatList = ({ onSelectUser, selectedUserId }) => {
   const [users, setUsers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const subscriptionRef = useRef(null);
 
   useEffect(() => {
@@ -74,6 +75,12 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
     };
   }, []);
 
+  // Filter users based on search query
+  const filteredUsers = users.filter(user => 
+    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="chat-list">
       <div className="chat-list-header">
@@ -85,6 +92,8 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
           <input
             type="text"
             placeholder="Search users.."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
           <span className="search-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -96,10 +105,10 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
       </div>
 
       <div className="user-list">
-        {users.length === 0 && (
+        {filteredUsers.length === 0 && (
           <div className="no-friends">No users found</div>
         )}
-        {users.map((user) => (
+        {filteredUsers.map((user) => (
           <div
             key={user.id}
             onClick={() => onSelectUser(user)}
