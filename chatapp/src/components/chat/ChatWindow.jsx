@@ -15,7 +15,15 @@ const CloseIcon = () => (
   </svg>
 );
 
-const ChatWindow = ({ selectedUser }) => {
+const MediaIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+    <polyline points="21 15 16 10 5 21"></polyline>
+  </svg>
+);
+
+const ChatWindow = ({ selectedUser, hideHeader }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
@@ -24,6 +32,9 @@ const ChatWindow = ({ selectedUser }) => {
   const [searchText, setSearchText] = useState('');
   const [filteredMessages, setFilteredMessages] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
+  const [mediaFiles, setMediaFiles] = useState([]);
+  const [isMobileView, setIsMobileView] = useState(window.innerWidth <= 767);
   const messagesEndRef = useRef(null);
   const subscriptionRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -38,6 +49,15 @@ const ChatWindow = ({ selectedUser }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth <= 767);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Fetch current user
   useEffect(() => {
@@ -227,6 +247,18 @@ const ChatWindow = ({ selectedUser }) => {
     setFilteredMessages(filtered);
   }, [searchText, messages]);
 
+  useEffect(() => {
+    if (messages.length > 0) {
+      const media = messages.filter(msg => msg.file_url).map(msg => ({
+        ...msg,
+        type: msg.file_type?.startsWith('image/') ? 'image' : 
+              msg.file_type?.startsWith('video/') ? 'video' : 
+              msg.file_type?.startsWith('audio/') ? 'audio' : 'file'
+      }));
+      setMediaFiles(media);
+    }
+  }, [messages]);
+
   const renderMessageContent = (message) => {
     if (!message.file_url) {
       return <p>{message.message}</p>;
@@ -238,34 +270,46 @@ const ChatWindow = ({ selectedUser }) => {
 
     return (
       <div className="file-message">
-        {isImage && (
-          <div className="media-preview">
-            <img src={message.file_url} alt={message.file_name} loading="lazy" />
-          </div>
+        {isMobileView ? (
+          <>
+            {isImage && (
+              <div className="media-preview">
+                <img src={message.file_url} alt={message.file_name} loading="lazy" />
+              </div>
+            )}
+            {isVideo && (
+              <div className="media-preview">
+                <video controls>
+                  <source src={message.file_url} type={message.file_type} />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            )}
+            {isAudio && (
+              <div className="media-preview audio-preview">
+                <audio controls>
+                  <source src={message.file_url} type={message.file_type} />
+                  Your browser does not support the audio tag.
+                </audio>
+              </div>
+            )}
+            <a href={message.file_url} 
+               target="_blank" 
+               rel="noopener noreferrer" 
+               className="file-link"
+               download={message.file_name}>
+              {message.message}
+            </a>
+          </>
+        ) : (
+          <a href={message.file_url} 
+             target="_blank" 
+             rel="noopener noreferrer" 
+             className="file-link"
+             download={message.file_name}>
+            {message.message}
+          </a>
         )}
-        {isVideo && (
-          <div className="media-preview">
-            <video controls>
-              <source src={message.file_url} type={message.file_type} />
-              Your browser does not support the video tag.
-            </video>
-          </div>
-        )}
-        {isAudio && (
-          <div className="media-preview audio-preview">
-            <audio controls>
-              <source src={message.file_url} type={message.file_type} />
-              Your browser does not support the audio tag.
-            </audio>
-          </div>
-        )}
-        <a href={message.file_url} 
-           target="_blank" 
-           rel="noopener noreferrer" 
-           className="file-link"
-           download={message.file_name}>
-          {message.message}
-        </a>
       </div>
     );
   };
@@ -280,40 +324,112 @@ const ChatWindow = ({ selectedUser }) => {
 
   return (
     <div className="chat-window">
-      <div className="chat-header">
-        <div className="header-left">
-          <div className="user-avatar">
-            {selectedUser.username?.[0]?.toUpperCase()}
-          </div>
-          <div className="user-info">
-            <h3>{selectedUser.username}</h3>
-            <p className="user-status">Online</p>
-          </div>
-        </div>
-        <div className="header-right">
-          <div className="search-container">
-            <div className="search-icon">
-              {searchText ? (
-                <button 
-                  className="clear-search" 
-                  onClick={() => setSearchText('')}
-                >
-                  <CloseIcon />
-                </button>
-              ) : (
-                <SearchIcon />
-              )}
+      {!hideHeader && (
+        <div className="chat-header">
+          <div className="header-left">
+            <div className="user-avatar">
+              {selectedUser.username?.[0]?.toUpperCase()}
             </div>
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search messages..."
-              className="search-input"
-            />
+            <div className="user-info">
+              <h3>{selectedUser.username}</h3>
+              <p className="user-status">Online</p>
+            </div>
+          </div>
+          <div className="header-right">
+            <div className="header-actions">
+              {!isMobileView && (
+                <button 
+                  className="media-btn"
+                  onClick={() => setShowMediaGallery(!showMediaGallery)}
+                  title="View Media"
+                >
+                  <MediaIcon />
+                </button>
+              )}
+              <div className="search-container">
+                <div className="search-icon">
+                  {searchText ? (
+                    <button 
+                      className="clear-search" 
+                      onClick={() => setSearchText('')}
+                    >
+                      <CloseIcon />
+                    </button>
+                  ) : (
+                    <SearchIcon />
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search messages..."
+                  className="search-input"
+                />
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {!isMobileView && showMediaGallery && (
+        <div className="media-gallery">
+          <div className="gallery-header">
+            <h3>Media Gallery</h3>
+            <button 
+              className="close-gallery"
+              onClick={() => setShowMediaGallery(false)}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+          <div className="gallery-content">
+            {mediaFiles.length > 0 ? (
+              <div className="media-grid">
+                {mediaFiles.map((file, index) => (
+                  <div key={index} className="media-item">
+                    {file.type === 'image' && (
+                      <img 
+                        src={file.file_url} 
+                        alt={file.file_name}
+                        onClick={() => window.open(file.file_url, '_blank')}
+                      />
+                    )}
+                    {file.type === 'video' && (
+                      <video 
+                        src={file.file_url}
+                        onClick={() => window.open(file.file_url, '_blank')}
+                      />
+                    )}
+                    {file.type === 'audio' && (
+                      <div className="audio-item">
+                        <audio controls src={file.file_url} />
+                        <span>{file.file_name}</span>
+                      </div>
+                    )}
+                    {file.type === 'file' && (
+                      <div className="file-item">
+                        <a 
+                          href={file.file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          download={file.file_name}
+                        >
+                          {file.message}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="no-media">
+                <p>No media files shared yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="messages-container">
         {(isSearching ? filteredMessages : messages).map((message) => (

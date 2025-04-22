@@ -1084,3 +1084,157 @@ body {
 .file-upload-btn {
   font-size: 1.2rem !important;
 }
+
+/* Media Gallery Styles */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.media-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #1a75ff;
+  border-radius: 50%;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-btn:hover {
+  background: #f1f5f9;
+  transform: scale(1.1);
+}
+
+.media-gallery {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100vh;
+  background: white;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.gallery-header {
+  padding: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gallery-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #1a202c;
+}
+
+.close-gallery {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #64748b;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.close-gallery:hover {
+  background: #f1f5f9;
+  color: #1a202c;
+}
+
+.gallery-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.media-item {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.media-item:hover {
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.media-item img,
+.media-item video {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.audio-item {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.audio-item span {
+  font-size: 0.8rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.file-item {
+  padding: 1rem;
+  text-align: center;
+}
+
+.file-item a {
+  color: #1a75ff;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.file-item a:hover {
+  text-decoration: underline;
+}
+
+.no-media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+}
+
+/* Mobile Responsive Styles for Media Gallery */
+@media (max-width: 767px) {
+  .media-gallery {
+    width: 100%;
+    height: 100vh;
+    top: 0;
+    left: 0;
+  }
+
+  .media-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .media-item img,
+  .media-item video {
+    height: 120px;
+  }
+}
