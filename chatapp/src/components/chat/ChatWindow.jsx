@@ -142,7 +142,7 @@ const ChatWindow = ({ selectedUser }) => {
         <div className="user-avatar">
           {selectedUser.username?.[0]?.toUpperCase()}
         </div>
-        <div className="user-info">
+        <div className="">
           <h3>{selectedUser.username}</h3>
           <p className="user-status">Online</p>
         </div>
