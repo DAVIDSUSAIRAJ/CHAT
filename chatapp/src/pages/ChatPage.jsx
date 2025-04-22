@@ -67,6 +67,10 @@ const ChatPage = () => {
     }
   };
 
+  const handleMediaGalleryToggle = () => {
+    setShowMediaGallery(prev => !prev);
+  };
+
   // Desktop view
   if (!isMobileView) {
     return (
@@ -75,7 +79,15 @@ const ChatPage = () => {
           <ChatList onSelectUser={handleSelectUser} selectedUserId={selectedUser?.id} />
         </div>
         <div className="chat-window-wrapper">
-          <ChatWindow selectedUser={selectedUser} />
+          <ChatWindow 
+            selectedUser={selectedUser} 
+            hideHeader={false}
+            showMediaGallery={showMediaGallery}
+            setShowMediaGallery={setShowMediaGallery}
+            searchText={searchText}
+            setSearchText={setSearchText}
+            isMobileView={isMobileView}
+          />
         </div>
       </div>
     );
@@ -112,7 +124,7 @@ const ChatPage = () => {
             <div className="mobile-header-right">
               <button 
                 className="mobile-media-btn"
-                onClick={() => setShowMediaGallery(!showMediaGallery)}
+                onClick={handleMediaGalleryToggle}
                 title="View Media"
               >
                 <MediaIcon />
@@ -147,6 +159,7 @@ const ChatPage = () => {
             setShowMediaGallery={setShowMediaGallery}
             searchText={searchText}
             setSearchText={setSearchText}
+            isMobileView={isMobileView}
           />
         </div>
       )}

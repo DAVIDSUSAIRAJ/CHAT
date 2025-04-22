@@ -23,7 +23,15 @@ const MediaIcon = () => (
   </svg>
 );
 
-const ChatWindow = ({ selectedUser, hideHeader }) => {
+const ChatWindow = ({ 
+  selectedUser, 
+  hideHeader,
+  showMediaGallery = false,
+  setShowMediaGallery,
+  searchText: externalSearchText,
+  setSearchText: externalSetSearchText,
+  isMobileView 
+}) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
@@ -34,13 +42,19 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
   const [filteredMessages, setFilteredMessages] = useState([]);
   const [filteredMediaFiles, setFilteredMediaFiles] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [showMediaGallery, setShowMediaGallery] = useState(false);
   const [mediaFiles, setMediaFiles] = useState([]);
-  const [isMobileView, setIsMobileView] = useState(window.innerWidth <= 767);
   const messagesEndRef = useRef(null);
   const subscriptionRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentMenuRef = useRef(null);
+
+  // Use external search text if provided (mobile view)
+  const actualSearchText = isMobileView ? externalSearchText : searchText;
+  const actualSetSearchText = isMobileView ? externalSetSearchText : setSearchText;
+
+  const handleMediaGalleryToggle = () => {
+    setShowMediaGallery(!showMediaGallery);
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -234,34 +248,20 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
   }, []);
 
   useEffect(() => {
-    if (!searchText.trim()) {
+    if (!actualSearchText?.trim()) {
       setFilteredMessages(messages);
       setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
-    const searchLower = searchText.toLowerCase();
+    const searchLower = actualSearchText.toLowerCase();
     const filtered = messages.filter(message => 
       message.message?.toLowerCase().includes(searchLower) ||
       message.file_name?.toLowerCase().includes(searchLower)
     );
     setFilteredMessages(filtered);
-  }, [searchText, messages]);
-
-  useEffect(() => {
-    if (!mediaSearchText.trim()) {
-      setFilteredMediaFiles(mediaFiles);
-      return;
-    }
-
-    const searchLower = mediaSearchText.toLowerCase();
-    const filtered = mediaFiles.filter(file => 
-      file.file_name?.toLowerCase().includes(searchLower) ||
-      file.message?.toLowerCase().includes(searchLower)
-    );
-    setFilteredMediaFiles(filtered);
-  }, [mediaSearchText, mediaFiles]);
+  }, [actualSearchText, messages]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -287,7 +287,6 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
 
     return (
       <div className="file-message">
-        {isMobileView ? (
           <>
             {isImage && (
               <div className="media-preview">
@@ -318,15 +317,7 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
               {message.message}
             </a>
           </>
-        ) : (
-          <a href={message.file_url} 
-             target="_blank" 
-             rel="noopener noreferrer" 
-             className="file-link"
-             download={message.file_name}>
-            {message.message}
-          </a>
-        )}
+   
       </div>
     );
   };
@@ -338,7 +329,6 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
       </div>
     );
   }
-
   return (
     <div className="chat-window">
       {!hideHeader && (
@@ -356,7 +346,7 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
             <div className="header-actions">
               <button 
                 className="media-btn"
-                onClick={() => setShowMediaGallery(!showMediaGallery)}
+                onClick={handleMediaGalleryToggle}
                 title="View Media"
               >
                 <MediaIcon />
@@ -384,17 +374,6 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {isMobileView && (
-        <div className="mobile-media-btn">
-          <button 
-            onClick={() => setShowMediaGallery(!showMediaGallery)}
-            title="View Media"
-          >
-            <MediaIcon />
-          </button>
         </div>
       )}
 
@@ -483,9 +462,9 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
           <div
             key={message.id || message.created_at}
             className={`message ${message.sender_id === currentUser?.id ? 'sent' : 'received'} ${
-              searchText && 
-              (message.message?.toLowerCase().includes(searchText.toLowerCase()) ||
-               message.file_name?.toLowerCase().includes(searchText.toLowerCase()))
+              actualSearchText && 
+              (message.message?.toLowerCase().includes(actualSearchText.toLowerCase()) ||
+               message.file_name?.toLowerCase().includes(actualSearchText.toLowerCase()))
                 ? 'highlighted'
                 : ''
             }`}
