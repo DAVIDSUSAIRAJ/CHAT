@@ -42,6 +42,15 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
   const fileInputRef = useRef(null);
   const attachmentMenuRef = useRef(null);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth <= 767);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const scrollToBottom = () => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -51,15 +60,6 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobileView(window.innerWidth <= 767);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // Fetch current user
   useEffect(() => {
@@ -287,6 +287,7 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
 
     return (
       <div className="file-message">
+        {isMobileView ? (
           <>
             {isImage && (
               <div className="media-preview">
@@ -316,7 +317,16 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
                download={message.file_name}>
               {message.message}
             </a>
-          </> 
+          </>
+        ) : (
+          <a href={message.file_url} 
+             target="_blank" 
+             rel="noopener noreferrer" 
+             className="file-link"
+             download={message.file_name}>
+            {message.message}
+          </a>
+        )}
       </div>
     );
   };
@@ -344,15 +354,13 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
           </div>
           <div className="header-right">
             <div className="header-actions">
-              {!isMobileView && (
-                <button 
-                  className="media-btn"
-                  onClick={() => setShowMediaGallery(!showMediaGallery)}
-                  title="View Media"
-                >
-                  <MediaIcon />
-                </button>
-              )}
+              <button 
+                className="media-btn"
+                onClick={() => setShowMediaGallery(!showMediaGallery)}
+                title="View Media"
+              >
+                <MediaIcon />
+              </button>
               <div className="search-container">
                 <div className="search-icon">
                   {searchText ? (
@@ -379,7 +387,18 @@ const ChatWindow = ({ selectedUser, hideHeader }) => {
         </div>
       )}
 
-      {!isMobileView && showMediaGallery && (
+      {isMobileView && (
+        <div className="mobile-media-btn">
+          <button 
+            onClick={() => setShowMediaGallery(!showMediaGallery)}
+            title="View Media"
+          >
+            <MediaIcon />
+          </button>
+        </div>
+      )}
+
+      {showMediaGallery && (
         <div className="media-gallery">
           <div className="gallery-header">
             <h3>Media Gallery</h3>
