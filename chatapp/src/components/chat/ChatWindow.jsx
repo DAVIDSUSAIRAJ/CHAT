@@ -312,6 +312,21 @@ const ChatWindow = ({
     }
   }, [messages]);
 
+  // Add effect to filter media files based on search text
+  useEffect(() => {
+    if (!mediaSearchText?.trim()) {
+      setFilteredMediaFiles(mediaFiles);
+      return;
+    }
+
+    const searchLower = mediaSearchText.toLowerCase();
+    const filtered = mediaFiles.filter(file => 
+      file.message?.toLowerCase().includes(searchLower) ||
+      file.file_name?.toLowerCase().includes(searchLower)
+    );
+    setFilteredMediaFiles(filtered);
+  }, [mediaSearchText, mediaFiles]);
+
   const renderMessageContent = (message) => {
     if (!message.file_url) {
       return <p>{message.message}</p>;
@@ -545,17 +560,23 @@ const ChatWindow = ({
                 {filteredMediaFiles.map((file, index) => (
                   <div key={index} className="media-item">
                     {file.type === 'image' && (
-                      <img 
-                        src={file.file_url} 
-                        alt={file.file_name}
-                        onClick={() => window.open(file.file_url, '_blank')}
-                      />
+                      <>
+                        <img 
+                          src={file.file_url} 
+                          alt={file.file_name}
+                          onClick={() => window.open(file.file_url, '_blank')}
+                        />
+                        <span className="file-name">{file.file_name}</span>
+                      </>
                     )}
                     {file.type === 'video' && (
-                      <video 
-                        src={file.file_url}
-                        onClick={() => window.open(file.file_url, '_blank')}
-                      />
+                      <>
+                        <video 
+                          src={file.file_url}
+                          onClick={() => window.open(file.file_url, '_blank')}
+                        />
+                        <span className="file-name">{file.file_name}</span>
+                      </>
                     )}
                     {file.type === 'audio' && (
                       <div className="audio-item">
@@ -581,6 +602,7 @@ const ChatWindow = ({
                         >
                           {file.message}
                         </a>
+                        <span className="file-name">{file.file_name}</span>
                       </div>
                     )}
                   </div>
