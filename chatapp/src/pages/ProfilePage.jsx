@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { toast } from 'react-toastify';
 import '../styles/profile.css';
 
 const ProfilePage = () => {
@@ -64,15 +65,15 @@ const ProfilePage = () => {
 
       if (error) {
         console.error('Error updating profile:', error);
-        alert('Failed to update profile. Please try again.');
+        toast.error('Failed to update profile. Please try again.');
       } else {
         setUser({...user, username, avatar_url: avatarUrl});
         setIsEditing(false);
-        alert('Profile updated successfully!');
+        toast.success('Profile updated successfully!');
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('An unexpected error occurred.');
+      toast.error('An unexpected error occurred.');
     } finally {
       setUpdateLoading(false);
     }
@@ -85,13 +86,13 @@ const ProfilePage = () => {
 
     // Validate file type is image
     if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file.');
+      toast.error('Please upload an image file.');
       return;
     }
 
-    // Validate file size (less than 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Image size should be less than 10MB.');
+    // Validate file size (less than 30MB)
+    if (file.size > 30 * 1024 * 1024) {
+      toast.error('Image size should be less than 30MB.');
       return;
     }
 
@@ -117,9 +118,10 @@ const ProfilePage = () => {
 
       // Set the avatar URL
       setAvatarUrl(publicUrl);
+      toast.info('Avatar uploaded. Save changes to update your profile.');
     } catch (error) {
       console.error('Error uploading avatar:', error);
-      alert('Error uploading avatar. Please try again.');
+      toast.error('Error uploading avatar. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -154,7 +156,7 @@ const ProfilePage = () => {
               <path d="M19 12H5M12 19l-7-7 7-7"/>
             </svg>
           </button>
-          <h1>Welcome Back</h1>
+          <h1>Profile</h1>
           <div className="profile-subtitle">Manage your profile information</div>
         </div>
 

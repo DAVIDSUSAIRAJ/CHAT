@@ -19,7 +19,7 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
         // Fetch all users except current user
         const { data, error } = await supabase
           .from('users')
-          .select('id, username, email')
+          .select('id, username, email, avatar_url')
           .neq('id', currentUser.id);
 
         console.log('All users:', data); // Debug log
@@ -55,7 +55,7 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
               // Refetch the entire users list when any change occurs
               const { data, error } = await supabase
                 .from('users')
-                .select('id, username, email')
+                .select('id, username, email, avatar_url')
                 .neq('id', currentUser.id);
 
               if (data && !error) {
@@ -176,9 +176,18 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
             onClick={() => onSelectUser(user)}
             className={`user-item ${selectedUserId === user.id ? 'selected' : ''}`}
           >
-            <div className="user-avatar">
-              {user.username?.[0]?.toUpperCase()}
-            </div>
+            {user.avatar_url ? (
+              <div className="user-avatar" style={{ 
+                background: 'none',
+                backgroundImage: `url(${user.avatar_url})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }}></div>
+            ) : (
+              <div className="user-avatar">
+                {user.username?.[0]?.toUpperCase()}
+              </div>
+            )}
             <div className="user-info">
               <h3>{user.username}</h3>
               <p>{user.email}</p>

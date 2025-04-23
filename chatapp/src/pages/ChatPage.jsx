@@ -34,6 +34,23 @@ const ChatPage = () => {
   const [searchText, setSearchText] = useState('');
   const navigate = useNavigate();
 
+  // Check for saved user when component mounts
+  useEffect(() => {
+    const savedUser = localStorage.getItem('selectedChatUser');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        setSelectedUser(user);
+        if (isMobileView) {
+          setShowChatList(false);
+        }
+      } catch (error) {
+        console.error('Error parsing saved user:', error);
+        localStorage.removeItem('selectedChatUser');
+      }
+    }
+  }, [isMobileView]);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobileView(window.innerWidth <= 767);
@@ -53,7 +70,23 @@ const ChatPage = () => {
     checkAuth();
   }, [navigate]);
 
-  const handleSelectUser = (user) => {
+  const handleSelectUser = async (user) => {
+    // If avatar_url is not in the user object, fetch it from the database
+    if (!user.avatar_url && user.id) {
+      const { data } = await supabase
+        .from('users')
+        .select('avatar_url')
+        .eq('id', user.id)
+        .single();
+      
+      if (data && data.avatar_url) {
+        user = { ...user, avatar_url: data.avatar_url };
+      }
+    }
+    
+    // Save selected user to localStorage
+    localStorage.setItem('selectedChatUser', JSON.stringify(user));
+    
     setSelectedUser(user);
     if (isMobileView) {
       setShowChatList(false);
@@ -111,9 +144,18 @@ const ChatPage = () => {
               </button>
               {selectedUser && (
                 <div className="selected-user-info">
-                  <div className="user-avatar">
-                    {selectedUser.username?.[0]?.toUpperCase()}
-                  </div>
+                  {selectedUser.avatar_url ? (
+                    <div className="user-avatar" style={{ 
+                      background: 'none',
+                      backgroundImage: `url(${selectedUser.avatar_url})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
+                    }}></div>
+                  ) : (
+                    <div className="user-avatar">
+                      {selectedUser.username?.[0]?.toUpperCase()}
+                    </div>
+                  )}
                   <div className="user-details">
                     <h3>{selectedUser.username}</h3>
                     <span className="online-status">Online</span>

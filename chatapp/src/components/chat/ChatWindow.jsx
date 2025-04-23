@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { toast } from 'react-toastify';
 import '../../styles/chat.css'; /* Voice button custom styles */
 import WaveSurferPlayer from './WaveSurferPlayer';
 import MusicPlayer from './MusicPlayer';
@@ -172,11 +173,11 @@ const ChatWindow = ({
         .single();
 
       if (error) {
-        alert('Failed to send message. Please try again.');
+        toast.error('Failed to send message. Please try again.');
         return;
       }
     } catch (error) {
-      alert('Failed to send message. Please try again.');
+      toast.error('Failed to send message. Please try again.');
     }
   };
 
@@ -184,8 +185,8 @@ const ChatWindow = ({
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size should be less than 10MB');
+    if (file.size > 30 * 1024 * 1024) {
+      toast.error('File size should be less than 30MB');
       return;
     }
 
@@ -260,7 +261,7 @@ const ChatWindow = ({
       if (error) throw error;
 
     } catch (error) {
-      alert('Failed to upload file. Please try again.');
+      toast.error('Failed to upload file. Please try again.');
       console.error('Upload error:', error);
     } finally {
       setUploading(false);
@@ -411,7 +412,7 @@ const ChatWindow = ({
       }, 1000);
     } catch (error) {
       console.error('Error starting recording:', error);
-      alert('Failed to start recording. Please check your microphone permissions.');
+      toast.error('Failed to start recording. Please check your microphone permissions.');
     }
   };
 
@@ -461,7 +462,7 @@ const ChatWindow = ({
 
     } catch (error) {
       console.error('Error uploading voice message:', error);
-      alert('Failed to send voice message. Please try again.');
+      toast.error('Failed to send voice message. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -479,9 +480,18 @@ const ChatWindow = ({
       {!hideHeader && (
         <div className="chat-header">
           <div className="header-left">
-            <div className="user-avatar">
-              {selectedUser.username?.[0]?.toUpperCase()}
-            </div>
+            {selectedUser.avatar_url ? (
+              <div className="user-avatar" style={{ 
+                background: 'none',
+                backgroundImage: `url(${selectedUser.avatar_url})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+              }}></div>
+            ) : (
+              <div className="user-avatar">
+                {selectedUser.username?.[0]?.toUpperCase()}
+              </div>
+            )}
             <div className="user-info">
               <h3>{selectedUser.username}</h3>
               <p className="user-status">Online</p>
