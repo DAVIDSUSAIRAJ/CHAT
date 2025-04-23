@@ -83,6 +83,47 @@
   justify-content: center;
   font-weight: 600;
   font-size: 1.75rem;
+  position: relative;
+  cursor: default;
+}
+
+.avatar-image {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  cursor: default;
+}
+
+.avatar-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.avatar-circle:hover .avatar-overlay,
+.avatar-image:hover .avatar-overlay {
+  opacity: 1;
+}
+
+.avatar-overlay svg {
+  color: white;
+}
+
+.profile-avatar .avatar-circle,
+.profile-avatar .avatar-image {
+  cursor: pointer;
 }
 
 .profile-form {
