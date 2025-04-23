@@ -28,6 +28,7 @@ const Register = () => {
     }
 
     try {
+      // Step 1: Create user authentication
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -42,7 +43,30 @@ const Register = () => {
         throw authError;
       }
 
-      navigate('/chat');
+      if (authData && authData.user) {
+        // Step 2: Insert user data into public.users table
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id, // Use the same ID from auth
+            username,
+            email,
+            password,
+            avatar_url: null,
+            status: 'offline',
+            about:"",
+            bio: null,
+            updated_at: new Date().toISOString(),
+          });
+
+        if (profileError) {
+          console.error('Error creating user profile:', profileError);
+          throw new Error('Failed to create user profile');
+        }
+
+        toast.success('Account created successfully!');
+        navigate('/chat');
+      }
     } catch (error) {
       toast.error(error.message);
     } finally {
