@@ -79,7 +79,9 @@ const ProfilePage = () => {
   if (loading) {
     return (
       <div className="profile-container">
-        <div className="profile-loading">Loading profile data...</div>
+        <div className="profile-card">
+          <div className="profile-loading">Loading profile data...</div>
+        </div>
       </div>
     );
   }
@@ -93,7 +95,8 @@ const ProfilePage = () => {
               <path d="M19 12H5M12 19l-7-7 7-7"/>
             </svg>
           </button>
-          <h1>Profile</h1>
+          <h1>Welcome Back</h1>
+          <div className="profile-subtitle">Manage your profile information</div>
         </div>
 
         <div className="profile-avatar">

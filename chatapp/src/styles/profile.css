@@ -1,37 +1,55 @@
 .profile-container {
-  width: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  background: #e5e7eb; /* Full gray background */
   display: flex;
-  justify-content: center;
   align-items: center;
-  background-color: #f8f9fa;
-  padding: 1rem;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
 }
 
 .profile-card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   width: 100%;
-  max-width: 500px;
-  padding: 1.5rem;
+  max-width: 380px;
+  background: white;
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  margin: 0 auto;
 }
 
 .profile-header {
   display: flex;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
 }
 
 .profile-header h1 {
   font-size: 1.5rem;
-  font-weight: 600;
-  color: #1a202c;
+  font-weight: 700;
+  color: #333;
   margin: 0;
-  margin-left: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.profile-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 0.75rem;
 }
 
 .profile-header .back-button {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
   background: none;
   border: none;
   padding: 0.5rem;
@@ -51,12 +69,12 @@
 .profile-avatar {
   display: flex;
   justify-content: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
 }
 
 .avatar-circle {
-  width: 100px;
-  height: 100px;
+  width: 70px;
+  height: 70px;
   background: #1a75ff;
   border-radius: 50%;
   color: white;
@@ -64,15 +82,15 @@
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 2.5rem;
+  font-size: 1.75rem;
 }
 
 .profile-form {
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 }
 
 .input-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .input-group label {
@@ -80,7 +98,7 @@
   margin-bottom: 0.5rem;
   font-weight: 500;
   color: #4a5568;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .input-group input {
@@ -88,7 +106,7 @@
   padding: 0.75rem;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.875rem;
   transition: all 0.2s;
 }
 
@@ -107,22 +125,23 @@
 .profile-actions {
   display: flex;
   gap: 1rem;
-  margin-top: 2rem;
+  margin-top: 1rem;
 }
 
 .profile-actions button {
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
   border: none;
+  font-size: 0.9375rem;
 }
 
 .edit-btn {
   background-color: #1a75ff;
   color: white;
-  flex: 1;
+  width: 100%;
 }
 
 .edit-btn:hover {
@@ -157,21 +176,23 @@
 .back-to-chat {
   display: flex;
   justify-content: center;
+  margin-top: 0.75rem;
 }
 
 .back-to-chat button {
   background: none;
   border: none;
   color: #1a75ff;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   padding: 0.5rem 1rem;
   border-radius: 8px;
   transition: background-color 0.2s;
+  font-size: 0.875rem;
 }
 
 .back-to-chat button:hover {
-  background-color: #f0f2ff;
+  text-decoration: underline;
 }
 
 .profile-loading {
@@ -185,7 +206,8 @@
 
 @media (max-width: 767px) {
   .profile-card {
-    padding: 1.25rem;
+    box-shadow: none;
+    padding: 1.5rem;
   }
   
   .avatar-circle {
@@ -195,6 +217,6 @@
   }
   
   .profile-header h1 {
-    font-size: 1.25rem;
+    font-size: 1.5rem;
   }
 } 
