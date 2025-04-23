@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import '../../styles/chat.css'; /* Voice button custom styles */
+import WaveSurferPlayer from './WaveSurferPlayer';
+import MusicPlayer from './MusicPlayer';
 
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -206,16 +208,44 @@ const ChatWindow = ({
         .getPublicUrl(filePath);
 
       let fileTypeIcon = '📎';
-      if (file.type.startsWith('image/')) fileTypeIcon = '🖼️';
-      else if (file.type.startsWith('video/')) fileTypeIcon = '🎥';
-      else if (file.type.startsWith('audio/')) fileTypeIcon = '🎵';
-      else if (file.type.includes('pdf')) fileTypeIcon = '📄';
-      else if (file.type.includes('document')) fileTypeIcon = '📝';
+      let messageText = `${fileTypeIcon} ${file.name}`;
+
+      if (file.type.startsWith('image/')) {
+        fileTypeIcon = '🖼️';
+        messageText = `${fileTypeIcon} ${file.name}`;
+      } else if (file.type.startsWith('video/')) {
+        fileTypeIcon = '🎥';
+        messageText = `${fileTypeIcon} ${file.name}`;
+      } else if (file.type.startsWith('audio/')) {
+        // Check if it's a music file based on extension
+        const musicExtensions = ['mp3', 'wav', 'ogg', 'm4a', 'flac'];
+        if (musicExtensions.includes(fileExt.toLowerCase())) {
+          fileTypeIcon = '🎵';
+          // Try to extract artist/title from filename
+          const nameParts = file.name.split('-');
+          if (nameParts.length > 1) {
+            const artist = nameParts[0].trim();
+            const title = nameParts.slice(1).join('-').replace(`.${fileExt}`, '').trim();
+            messageText = `${fileTypeIcon} ${artist} - ${title}`;
+          } else {
+            messageText = `${fileTypeIcon} ${file.name}`;
+          }
+        } else {
+          fileTypeIcon = '🔊';
+          messageText = `${fileTypeIcon} ${file.name}`;
+        }
+      } else if (file.type.includes('pdf')) {
+        fileTypeIcon = '📄';
+        messageText = `${fileTypeIcon} ${file.name}`;
+      } else if (file.type.includes('document')) {
+        fileTypeIcon = '📝';
+        messageText = `${fileTypeIcon} ${file.name}`;
+      }
 
       const messageToSend = {
         sender_id: currentUser.id,
         receiver_id: selectedUser.id,
-        message: `${fileTypeIcon} ${file.name}`,
+        message: messageText,
         file_url: publicUrl,
         file_type: file.type,
         file_name: file.name
@@ -290,6 +320,8 @@ const ChatWindow = ({
     const isImage = message.file_type?.startsWith('image/');
     const isVideo = message.file_type?.startsWith('video/');
     const isAudio = message.file_type?.startsWith('audio/');
+    const isVoiceMessage = isAudio && message.message === '🎤 Voice Message';
+    const isMusicFile = isAudio && !isVoiceMessage;
 
     return (
       <div className="file-message">
@@ -307,12 +339,18 @@ const ChatWindow = ({
                 </video>
               </div>
             )}
-            {isAudio && (
-              <div className="media-preview audio-preview">
-                <audio controls>
-                  <source src={message.file_url} type={message.file_type} />
-                  Your browser does not support the audio tag.
-                </audio>
+            {isVoiceMessage && (
+              <div className="media-preview voice-message-preview">
+                <WaveSurferPlayer audioUrl={message.file_url} />
+              </div>
+            )}
+            {isMusicFile && (
+              <div className="media-preview music-preview">
+                <MusicPlayer 
+                  audioUrl={message.file_url} 
+                  songName={message.file_name} 
+                  artist={message.message.includes('🎵') ? message.message.replace('🎵', '').trim() : 'Unknown Artist'} 
+                />
               </div>
             )}
             <a href={message.file_url} 
@@ -521,7 +559,15 @@ const ChatWindow = ({
                     )}
                     {file.type === 'audio' && (
                       <div className="audio-item">
-                        <audio controls src={file.file_url} />
+                        {file.message === '🎤 Voice Message' ? (
+                          <WaveSurferPlayer audioUrl={file.file_url} />
+                        ) : (
+                          <MusicPlayer 
+                            audioUrl={file.file_url} 
+                            songName={file.file_name} 
+                            artist={file.message.includes('🎵') ? file.message.replace('🎵', '').trim() : 'Unknown Artist'} 
+                          />
+                        )}
                         <span>{file.file_name}</span>
                       </div>
                     )}
