@@ -4,6 +4,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import ChatPage from './pages/ChatPage';
+import ProfilePage from './pages/ProfilePage';
 import './App.css'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>

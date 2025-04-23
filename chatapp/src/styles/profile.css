@@ -1,0 +1,200 @@
+.profile-container {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f8f9fa;
+  padding: 1rem;
+}
+
+.profile-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 500px;
+  padding: 1.5rem;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.profile-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1a202c;
+  margin: 0;
+  margin-left: 1rem;
+}
+
+.profile-header .back-button {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  color: #1a75ff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.profile-header .back-button:hover {
+  background-color: #f1f5f9;
+}
+
+.profile-avatar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+.avatar-circle {
+  width: 100px;
+  height: 100px;
+  background: #1a75ff;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 2.5rem;
+}
+
+.profile-form {
+  margin-bottom: 2rem;
+}
+
+.input-group {
+  margin-bottom: 1.5rem;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #4a5568;
+  font-size: 0.9rem;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.input-group input:disabled {
+  background-color: #f8f9fa;
+  color: #718096;
+  cursor: not-allowed;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #1a75ff;
+  box-shadow: 0 0 0 2px rgba(26, 117, 255, 0.1);
+}
+
+.profile-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.profile-actions button {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.edit-btn {
+  background-color: #1a75ff;
+  color: white;
+  flex: 1;
+}
+
+.edit-btn:hover {
+  background-color: #0052cc;
+}
+
+.save-btn {
+  background-color: #10b981;
+  color: white;
+  flex: 1;
+}
+
+.save-btn:hover {
+  background-color: #0e9f6e;
+}
+
+.cancel-btn {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  flex: 1;
+}
+
+.cancel-btn:hover {
+  background-color: #e5e7eb;
+}
+
+.profile-actions button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.back-to-chat {
+  display: flex;
+  justify-content: center;
+}
+
+.back-to-chat button {
+  background: none;
+  border: none;
+  color: #1a75ff;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.back-to-chat button:hover {
+  background-color: #f0f2ff;
+}
+
+.profile-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  font-size: 1rem;
+  color: #4a5568;
+}
+
+@media (max-width: 767px) {
+  .profile-card {
+    padding: 1.25rem;
+  }
+  
+  .avatar-circle {
+    width: 80px;
+    height: 80px;
+    font-size: 2rem;
+  }
+  
+  .profile-header h1 {
+    font-size: 1.25rem;
+  }
+} 
