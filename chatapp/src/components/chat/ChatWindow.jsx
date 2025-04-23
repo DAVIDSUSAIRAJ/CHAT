@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import '../../styles/chat.css'; /* Voice button custom styles */
 
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -43,10 +44,15 @@ const ChatWindow = ({
   const [filteredMediaFiles, setFilteredMediaFiles] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [mediaFiles, setMediaFiles] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [audioChunks, setAudioChunks] = useState([]);
   const messagesEndRef = useRef(null);
   const subscriptionRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentMenuRef = useRef(null);
+  const recordingTimerRef = useRef(null);
 
   // Use external search text if provided (mobile view)
   const actualSearchText = isMobileView ? externalSearchText : searchText;
@@ -322,6 +328,92 @@ const ChatWindow = ({
     );
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        await handleVoiceMessageUpload(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setAudioChunks(chunks);
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      // Start recording timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      alert('Failed to start recording. Please check your microphone permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const handleVoiceMessageUpload = async (audioBlob) => {
+    if (!currentUser || !selectedUser) return;
+
+    setUploading(true);
+
+    try {
+      const fileName = `${currentUser.id}-${Date.now()}.webm`;
+      const filePath = `${selectedUser.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('chat-files')
+        .upload(filePath, audioBlob);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-files')
+        .getPublicUrl(filePath);
+
+      const messageToSend = {
+        sender_id: currentUser.id,
+        receiver_id: selectedUser.id,
+        message: '🎤 Voice Message',
+        file_url: publicUrl,
+        file_type: 'audio/webm',
+        file_name: 'Voice Message'
+      };
+
+      const { error } = await supabase
+        .from('chat')
+        .insert([messageToSend])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+    } catch (error) {
+      console.error('Error uploading voice message:', error);
+      alert('Failed to send voice message. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (!selectedUser) {
     return (
       <div className="chat-window empty">
@@ -486,7 +578,7 @@ const ChatWindow = ({
             type="button"
             onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
             className="attachment-btn"
-            disabled={uploading}
+            disabled={uploading || isRecording}
           >
             {uploading ? '⏳' : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
@@ -541,14 +633,42 @@ const ChatWindow = ({
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="Type a message"
           className="message-input-field"
+          disabled={isRecording}
         />
+
+        <button
+          type="button"
+          className={`voice-btn voice-record-btn ${isRecording ? 'recording' : ''}`}
+          onMouseDown={startRecording}
+          onMouseUp={stopRecording}
+          onTouchStart={startRecording}
+          onTouchEnd={stopRecording}
+          disabled={uploading}
+        >
+          {isRecording ? (
+            <div className="recording-indicator">
+              <span className="recording-dot"></span>
+              <span className="recording-time">
+                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+              </span>
+            </div>
+          ) : (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          )}
+        </button>
+
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileUpload}
           style={{ display: 'none' }}
         />
-        <button type="submit" className="send-button" disabled={!newMessage.trim() && !uploading}>
+        <button type="submit" className="send-button" disabled={(!newMessage.trim() && !uploading) || isRecording}>
           Send
         </button>
       </form>

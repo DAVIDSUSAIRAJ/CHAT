@@ -1,0 +1,116 @@
+/* Voice button styles with higher specificity */
+.message-input .voice-btn.voice-record-btn {
+  background: #f4f5f7 !important;
+  border: none !important;
+  border-radius: 50% !important;
+  width: 48px !important;
+  height: 48px !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #666 !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+  position: relative !important;
+  overflow: hidden !important;
+  min-width: 48px !important;
+  margin: 0 4px !important;
+}
+
+.message-input .voice-btn.voice-record-btn:hover {
+  color: #3a7bfd !important;
+  background: #f0f2ff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.message-input .voice-btn.voice-record-btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+.message-input .voice-btn.voice-record-btn.recording {
+  color: white !important;
+  background: linear-gradient(135deg, #ff5b5b, #ff3c3c) !important;
+  box-shadow: 0 4px 12px rgba(255, 68, 68, 0.3) !important;
+  animation: pulse-shadow 1.5s infinite !important;
+}
+
+.message-input .voice-btn.voice-record-btn .recording-indicator {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+.message-input .voice-btn.voice-record-btn .recording-dot {
+  width: 10px !important;
+  height: 10px !important;
+  background-color: white !important;
+  border-radius: 50% !important;
+  animation: pulse 1.2s infinite !important;
+}
+
+.message-input .voice-btn.voice-record-btn .recording-time {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: white !important;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-shadow {
+  0% {
+    box-shadow: 0 4px 12px rgba(255, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(255, 68, 68, 0.5);
+  }
+  100% {
+    box-shadow: 0 4px 12px rgba(255, 68, 68, 0.3);
+  }
+}
+
+/* Disabled state */
+.message-input .voice-btn.voice-record-btn:disabled {
+  background: #e1e2e5 !important;
+  color: #aaa !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Add ripple effect when button is pressed */
+.message-input .voice-btn.voice-record-btn::after {
+  content: '' !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: rgba(255, 255, 255, 0.3) !important;
+  border-radius: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  transition: width 0.3s, height 0.3s !important;
+}
+
+.message-input .voice-btn.voice-record-btn:active::after {
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+} 
