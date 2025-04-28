@@ -30,6 +30,19 @@ const MediaIcon = () => (
   </svg>
 );
 
+const AudioCallIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.999.999 0 0 0-1.03.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02c-.37-1.11-.56-2.3-.56-3.53c0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99C3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
+  </svg>
+);
+
+const VideoCallIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="23 7 16 12 23 17 23 7"></polygon>
+    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+  </svg>
+);
+
 const ChatWindow = ({ 
   selectedUser, 
   hideHeader,
@@ -785,33 +798,47 @@ const ChatWindow = ({
           <div className="header-right">
             <div className="header-actions">
               <button 
+                className="header-icon-btn"
+                onClick={() => {/* TODO: Implement audio call */}}
+                title="Audio Call"
+              >
+                <AudioCallIcon />
+              </button>
+              <button 
+                className="header-icon-btn"
+                onClick={() => {/* TODO: Implement video call */}}
+                title="Video Call"
+              >
+                <VideoCallIcon />
+              </button>
+              <button 
                 className="media-btn"
                 onClick={handleMediaGalleryToggle}
                 title="View Media"
               >
                 <MediaIcon />
               </button>
-              <div className="search-container">
-                <div className="search-icon">
-                  {searchText ? (
-                    <button 
-                      className="clear-search" 
-                      onClick={() => setSearchText('')}
-                    >
-                      <CloseIcon />
-                    </button>
-                  ) : (
-                    <SearchIcon />
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search messages..."
-                  className="search-input"
-                />
+            </div>
+            <div className="search-container">
+              <div className="search-icon">
+                {searchText ? (
+                  <button 
+                    className="clear-search" 
+                    onClick={() => setSearchText('')}
+                  >
+                    <CloseIcon />
+                  </button>
+                ) : (
+                  <SearchIcon />
+                )}
               </div>
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search messages..."
+                className="search-input"
+              />
             </div>
           </div>
         </div>
