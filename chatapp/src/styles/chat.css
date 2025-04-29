@@ -3,8 +3,8 @@
   background: #f4f5f7 !important;
   border: none !important;
   border-radius: 50% !important;
-  width: 48px !important;
-  height: 48px !important;
+  width: 40px !important;
+  height: 40px !important;
   cursor: pointer !important;
   display: flex !important;
   align-items: center !important;
@@ -14,7 +14,7 @@
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
   position: relative !important;
   overflow: hidden !important;
-  min-width: 48px !important;
+  min-width: 40px !important;
   margin: 0 4px !important;
 }
 
@@ -565,4 +565,280 @@
 
 .chat-header .user-status.offline::before {
   background-color: #9e9e9e;
+}
+
+/* Video button styles with higher specificity */
+.message-input .video-btn.video-record-btn {
+  background: #f4f5f7 !important;
+  border: none !important;
+  border-radius: 50% !important;
+  width: 40px !important;
+  height: 40px !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #666 !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+  position: relative !important;
+  overflow: hidden !important;
+  min-width: 40px !important;
+  margin: 0 4px !important;
+}
+
+.message-input .video-btn.video-record-btn:hover {
+  color: #3a7bfd !important;
+  background: #f0f2ff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.message-input .video-btn.video-record-btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+.message-input .video-btn.video-record-btn.recording {
+  color: white !important;
+  background: linear-gradient(135deg, #ff5b5b, #ff3c3c) !important;
+  box-shadow: 0 4px 12px rgba(255, 68, 68, 0.3) !important;
+  animation: pulse-shadow 1.5s infinite !important;
+}
+
+/* Video preview container */
+.video-preview-container {
+  position: fixed !important;
+  bottom: 80px !important;
+  right: 20px !important;
+  width: 200px !important;
+  height: 150px !important;
+  background: #000 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 1000 !important;
+}
+
+.video-preview {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.video-preview-container .recording-indicator {
+  position: absolute !important;
+  top: 10px !important;
+  left: 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  padding: 4px 8px !important;
+  border-radius: 12px !important;
+}
+
+.video-preview-container .recording-dot {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: #ff3c3c !important;
+  border-radius: 50% !important;
+  animation: pulse 1.2s infinite !important;
+}
+
+.video-preview-container .recording-time {
+  color: white !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+/* Mobile responsive styles for video recording */
+@media (max-width: 767px) {
+  .video-preview-container {
+    bottom: 90px !important;
+    right: 10px !important;
+    width: 160px !important;
+    height: 120px !important;
+  }
+  
+  .video-btn.video-record-btn {
+    z-index: 1001 !important;
+  }
+}
+
+/* Message Input Styles */
+.message-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: white;
+  border-top: 1px solid #e2e8f0;
+  position: relative;
+  z-index: 1000;
+}
+
+.message-input-field {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.message-input-field:focus {
+  outline: none;
+  border-color: #3a7bfd;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(58, 123, 253, 0.1);
+}
+
+.send-button {
+  background: #3a7bfd;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 60px;
+}
+
+.send-button:hover {
+  background: #2567fd;
+  transform: translateY(-1px);
+}
+
+.send-button:disabled {
+  background: #e2e8f0;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 767px) {
+  .message-input {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px;
+    background: white;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 1000;
+  }
+
+  .message-input-field {
+    flex: 1;
+    font-size: 14px;
+    padding: 8px 12px;
+    margin-right: 4px;
+    min-width: 0;
+  }
+
+  .send-button {
+    padding: 8px;
+    min-width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #3a7bfd;
+    margin-left: 4px;
+    flex-shrink: 0;
+    z-index: 1001;
+  }
+
+  .send-button svg {
+    width: 18px;
+    height: 18px;
+    color: white;
+  }
+
+  .send-button:disabled {
+    background: #e2e8f0;
+    color: #94a3b8;
+  }
+
+  .video-btn.video-record-btn,
+  .voice-btn.voice-record-btn {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    padding: 4px !important;
+    margin: 0 2px !important;
+  }
+
+  .video-btn.video-record-btn svg,
+  .voice-btn.voice-record-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .attachment-btn {
+    width: 36px;
+    height: 36px;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    z-index: 1001;
+  }
+
+  .attachment-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* Media Gallery Styles */
+.media-gallery {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100vh;
+  background: white;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+  z-index: 1002;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile Responsive Styles for Media Gallery */
+@media (max-width: 767px) {
+  .media-gallery {
+    width: 100%;
+    height: 100vh;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    position: fixed;
+    z-index: 1002;
+    background: white;
+  }
+
+  .message-input {
+    z-index: 1001;
+  }
+
+  /* Hide message input when media gallery is open */
+  .media-gallery + .message-input {
+    display: none !important;
+  }
+
+  .gallery-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 0;
+  }
 } 

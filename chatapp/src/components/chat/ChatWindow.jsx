@@ -78,6 +78,12 @@ const ChatWindow = ({
   const fileInputRef = useRef(null);
   const attachmentMenuRef = useRef(null);
   const recordingTimerRef = useRef(null);
+  const [isVideoRecording, setIsVideoRecording] = useState(false);
+  const [videoRecorder, setVideoRecorder] = useState(null);
+  const [videoChunks, setVideoChunks] = useState([]);
+  const videoPreviewRef = useRef(null);
+  const videoStreamRef = useRef(null);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   // Use external search text if provided (mobile view)
   const actualSearchText = isMobileView ? externalSearchText : searchText;
@@ -671,9 +677,13 @@ const ChatWindow = ({
       };
 
       recorder.onstop = async () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        await handleVoiceMessageUpload(audioBlob);
+        if (chunks.length > 0) {
+          const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+          await handleVoiceMessageUpload(audioBlob);
+        }
         stream.getTracks().forEach(track => track.stop());
+        setIsRecording(false);
+        setRecordingTime(0);
       };
 
       recorder.start();
@@ -683,20 +693,146 @@ const ChatWindow = ({
       setRecordingTime(0);
 
       // Start recording timer
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
     } catch (error) {
       console.error('Error starting recording:', error);
       toast.error('Failed to start recording. Please check your microphone permissions.');
+      setIsRecording(false);
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
+    try {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+        }
+      }
+    } catch (error) {
+      console.error('Error stopping recording:', error);
       setIsRecording(false);
+      setRecordingTime(0);
+    }
+  };
+
+  const startVideoRecording = async () => {
+    try {
+      // First cleanup any existing streams
+      if (videoStreamRef.current) {
+        videoStreamRef.current.getTracks().forEach(track => track.stop());
+        videoStreamRef.current = null;
+      }
+      
+      setIsVideoRecording(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: true
+      });
+      
+      videoStreamRef.current = stream;
+      
+      // Create and set up video preview
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = null;
+        videoPreviewRef.current.srcObject = stream;
+        videoPreviewRef.current.muted = true;
+        
+        try {
+          await videoPreviewRef.current.play();
+        } catch (playError) {
+          console.error('Error playing video preview:', playError);
+          cleanupVideoRecording();
+          return;
+        }
+      } else {
+        console.error('Video preview ref not found');
+        cleanupVideoRecording();
+        return;
+      }
+
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        try {
+          if (chunks.length > 0) {
+            const videoBlob = new Blob(chunks, { type: 'video/webm' });
+            await handleVideoMessageUpload(videoBlob);
+          }
+        } catch (error) {
+          console.error('Error processing video:', error);
+          toast.error('Failed to process video. Please try again.');
+        } finally {
+          cleanupVideoRecording();
+        }
+      };
+
+      recorder.start();
+      setVideoRecorder(recorder);
+      setVideoChunks(chunks);
+
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error starting video recording:', error);
+      toast.error(`Camera access failed: ${error.message}. Please check your camera permissions.`);
+      cleanupVideoRecording();
+    }
+  };
+
+  const cleanupVideoRecording = () => {
+    // Stop all tracks in the stream
+    if (videoStreamRef.current) {
+      videoStreamRef.current.getTracks().forEach(track => track.stop());
+      videoStreamRef.current = null;
+    }
+    
+    // Clear video preview
+    if (videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = null;
+    }
+    
+    // Clear timer
+    if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
+    }
+    
+    // Reset states
+    setIsVideoRecording(false);
+    setVideoRecorder(null);
+    setVideoChunks([]);
+    setRecordingTime(0);
+  };
+
+  const stopVideoRecording = () => {
+    try {
+      if (videoRecorder && isVideoRecording) {
+        videoRecorder.stop();
+      }
+    } catch (error) {
+      console.error('Error stopping video recording:', error);
+      cleanupVideoRecording();
     }
   };
 
@@ -744,6 +880,50 @@ const ChatWindow = ({
     }
   };
 
+  const handleVideoMessageUpload = async (videoBlob) => {
+    if (!currentUser || !selectedUser) return;
+
+    setUploading(true);
+
+    try {
+      const fileName = `${currentUser.id}-${Date.now()}.webm`;
+      const filePath = `${selectedUser.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('chat-files')
+        .upload(filePath, videoBlob);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-files')
+        .getPublicUrl(filePath);
+
+      const messageToSend = {
+        sender_id: currentUser.id,
+        receiver_id: selectedUser.id,
+        message: '🎥 Video Message',
+        file_url: publicUrl,
+        file_type: 'video/webm',
+        file_name: 'Video Message'
+      };
+
+      const { error } = await supabase
+        .from('chat')
+        .insert([messageToSend])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+    } catch (error) {
+      console.error('Error uploading video message:', error);
+      toast.error('Failed to send video message. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   // Format last seen time
   const formatLastSeen = (timestamp) => {
     if (!timestamp) return '';
@@ -761,6 +941,30 @@ const ChatWindow = ({
     if (diffDays === 1) return 'yesterday';
     return lastSeenDate.toLocaleDateString();
   };
+
+  // Add useEffect to detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      setIsMobileDevice(isMobile);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Add cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (videoStreamRef.current) {
+        videoStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, []);
 
   if (!selectedUser) {
     return (
@@ -851,6 +1055,17 @@ const ChatWindow = ({
             <button 
               className="close-gallery"
               onClick={() => setShowMediaGallery(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '8px',
+                cursor: 'pointer',
+                color: '#64748b',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
             >
               <CloseIcon />
             </button>
@@ -939,6 +1154,59 @@ const ChatWindow = ({
         </div>
       )}
 
+      {isVideoRecording && (
+        <div 
+          className="video-preview-container"
+          style={{
+            position: 'fixed',
+            bottom: isMobileDevice ? '140px' : '80px',
+            right: isMobileDevice ? '10px' : '20px',
+            width: isMobileDevice ? '160px' : '320px',
+            height: isMobileDevice ? '120px' : '240px',
+            backgroundColor: '#000',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            zIndex: 1000,
+            border: '2px solid #3a7bfd'
+          }}
+        >
+          <video 
+            ref={videoPreviewRef} 
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+            autoPlay 
+            playsInline 
+            muted
+          />
+          <div className="recording-indicator"
+            style={{
+              position: 'absolute',
+              top: '10px',
+              left: '10px',
+              background: 'rgba(0, 0, 0, 0.5)',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span className="recording-dot"></span>
+            <span className="recording-time"
+              style={{
+                color: 'white',
+                fontSize: isMobileDevice ? '10px' : '12px'
+              }}
+            >
+              {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="messages-container">
         {(isSearching ? filteredMessages : messages).map((message) => (
           <div
@@ -962,13 +1230,19 @@ const ChatWindow = ({
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSendMessage} className="message-input">
+      <form onSubmit={handleSendMessage} className="message-input" style={{ 
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        padding: isMobileDevice ? '8px' : '12px',
+        gap: isMobileDevice ? '8px' : '12px'
+      }}>
         <div className="attachment-container" ref={attachmentMenuRef}>
           <button
             type="button"
             onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
             className="attachment-btn"
-            disabled={uploading || isRecording}
+            disabled={uploading || isRecording || isVideoRecording}
           >
             {uploading ? '⏳' : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
@@ -1023,27 +1297,124 @@ const ChatWindow = ({
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="Type a message"
           className="message-input-field"
-          disabled={isRecording}
+          disabled={isRecording || isVideoRecording}
+          style={{
+            flex: 1,
+            padding: isMobileDevice ? '8px' : '12px',
+            fontSize: isMobileDevice ? '14px' : '16px'
+          }}
         />
 
         <button
           type="button"
-          className={`voice-btn voice-record-btn ${isRecording ? 'recording' : ''}`}
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onTouchStart={startRecording}
-          onTouchEnd={stopRecording}
-          disabled={uploading}
+          className={`video-btn video-record-btn ${isVideoRecording ? 'recording' : ''}`}
+          title={isVideoRecording ? "Release to stop recording" : "Hold to record video"}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isVideoRecording && !uploading && !isRecording) {
+              startVideoRecording();
+            }
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isVideoRecording) {
+              stopVideoRecording();
+            }
+          }}
+          onMouseDown={(e) => {
+            if (!isMobileDevice && !isVideoRecording && !uploading && !isRecording) {
+              e.preventDefault();
+              startVideoRecording();
+            }
+          }}
+          onMouseUp={(e) => {
+            if (!isMobileDevice && isVideoRecording) {
+              e.preventDefault();
+              stopVideoRecording();
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isMobileDevice && isVideoRecording) {
+              e.preventDefault();
+              stopVideoRecording();
+            }
+          }}
+          disabled={uploading || isRecording}
+          style={{
+            width: isMobileDevice ? '32px' : '40px',
+            height: isMobileDevice ? '32px' : '40px',
+            padding: isMobileDevice ? '4px' : '8px'
+          }}
         >
-          {isRecording ? (
+          {isVideoRecording ? (
             <div className="recording-indicator">
               <span className="recording-dot"></span>
-              <span className="recording-time">
+              <span className="recording-time" style={{ fontSize: isMobileDevice ? '10px' : '12px' }}>
                 {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
               </span>
             </div>
           ) : (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 7l-7 5 7 5V7z"></path>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+            </svg>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className={`voice-btn voice-record-btn ${isRecording ? 'recording' : ''}`}
+          title={isRecording ? "Release to stop recording" : "Hold to record voice"}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isRecording && !uploading && !isVideoRecording) {
+              startRecording();
+            }
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isRecording) {
+              stopRecording();
+            }
+          }}
+          onMouseDown={(e) => {
+            if (!isMobileDevice && !isRecording && !uploading && !isVideoRecording) {
+              e.preventDefault();
+              startRecording();
+            }
+          }}
+          onMouseUp={(e) => {
+            if (!isMobileDevice && isRecording) {
+              e.preventDefault();
+              stopRecording();
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isMobileDevice && isRecording) {
+              e.preventDefault();
+              stopRecording();
+            }
+          }}
+          disabled={uploading || isVideoRecording}
+          style={{
+            width: isMobileDevice ? '32px' : '40px',
+            height: isMobileDevice ? '32px' : '40px',
+            padding: isMobileDevice ? '4px' : '8px'
+          }}
+        >
+          {isRecording ? (
+            <div className="recording-indicator">
+              <span className="recording-dot"></span>
+              <span className="recording-time" style={{ fontSize: isMobileDevice ? '10px' : '12px' }}>
+                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+              </span>
+            </div>
+          ) : (
+            <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
               <line x1="12" y1="19" x2="12" y2="23"></line>
@@ -1058,7 +1429,15 @@ const ChatWindow = ({
           onChange={handleFileUpload}
           style={{ display: 'none' }}
         />
-        <button type="submit" className="send-button" disabled={(!newMessage.trim() && !uploading) || isRecording}>
+        <button 
+          type="submit" 
+          className="send-button" 
+          disabled={(!newMessage.trim() && !uploading) || isRecording || isVideoRecording}
+          style={{
+            padding: isMobileDevice ? '8px 12px' : '12px 16px',
+            fontSize: isMobileDevice ? '14px' : '16px'
+          }}
+        >
           Send
         </button>
       </form>
