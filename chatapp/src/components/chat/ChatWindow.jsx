@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { createRealtimeChannel, subscribeWithRetry } from '../../lib/realtimeUtils';
 import { toast } from 'react-toastify';
 import '../../styles/chat.css'; /* Voice button custom styles */
 import WaveSurferPlayer from './WaveSurferPlayer';
@@ -747,8 +746,7 @@ const ChatWindow = ({
   
   const sendSignalingMessage = async (message) => {
     try {
-      const channel = createRealtimeChannel('public:call-signals');
-      await channel.send({
+      await supabase.channel('public:call-signals').send({
         type: 'broadcast',
         event: 'call-signal',
         payload: message
@@ -948,7 +946,7 @@ const ChatWindow = ({
   useEffect(() => {
     if (!currentUser) return;
     
-    const channel = createRealtimeChannel('public:call-signals');
+    const channel = supabase.channel('public:call-signals');
     
     channel.on('broadcast', { event: 'call-signal' }, (payload) => {
       if (!payload || !payload.payload) return;
@@ -998,7 +996,7 @@ const ChatWindow = ({
       }
     });
     
-    subscribeWithRetry(channel);
+    channel.subscribe();
     callChannelRef.current = channel;
     
     return () => {
