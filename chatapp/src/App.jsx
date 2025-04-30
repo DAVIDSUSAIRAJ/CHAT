@@ -6,6 +6,7 @@ import Register from './components/auth/Register';
 import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
 import StatusDebugTool from './StatusDebugTool';
+import DebugSupabase from './pages/DebugSupabase';
 import './App.css'
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/debug-status" element={<StatusDebugTool />} />
+          <Route path="/debug-supabase" element={<DebugSupabase />} />
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
