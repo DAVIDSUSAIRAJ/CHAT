@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { createRealtimeChannel, subscribeWithRetry } from '../../lib/realtimeUtils';
 
 // Maximum time in milliseconds before considering a user offline (3 minutes)
 const PRESENCE_TIMEOUT = 3 * 60 * 1000;
@@ -44,8 +45,8 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
           setOnlineStatus(statusMap);
         }
         
-        // Initialize presence channel for real-time online status
-        const presenceChannel = supabase.channel('online-users', {
+        // Initialize presence channel for real-time online status with robust connection
+        const presenceChannel = createRealtimeChannel('online-users', {
           config: {
             presence: {
               key: currentUser.id,
@@ -92,10 +93,13 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
               });
               return newStatus;
             });
-          })
-          .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-              // Track current user's online status
+          });
+        
+        // Use retry-enabled subscribe method
+        subscribeWithRetry(presenceChannel)
+          .then(async () => {
+            // Track current user's online status
+            try {
               await presenceChannel.track({
                 online_at: new Date().toISOString(),
                 user_id: currentUser.id
@@ -109,9 +113,11 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
                   last_seen: new Date().toISOString()
                 })
                 .eq('id', currentUser.id);
+            } catch (error) {
+              console.error('Error setting online status:', error);
             }
           });
-          
+        
         presenceChannelRef.current = presenceChannel;
         
         // Set up heartbeat to keep status active
@@ -164,39 +170,42 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
           subscriptionRef.current.unsubscribe();
         }
 
-        const channel = supabase.channel('public:users')
-          .on(
-            'postgres_changes',
-            {
-              event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
-              schema: 'public',
-              table: 'users'
-            },
-            async (payload) => {
-              if (payload.new && payload.new.id && payload.new.status) {
-                // Update local status state
-                setOnlineStatus(prev => ({
-                  ...prev,
-                  [payload.new.id]: {
-                    status: payload.new.status,
-                    lastSeen: payload.new.last_seen
-                  }
-                }));
-                
-                // Refetch the entire users list when any change occurs
-                const { data, error } = await supabase
-                  .from('users')
-                  .select('id, username, email, avatar_url, status, last_seen')
-                  .neq('id', currentUser.id);
-
-                if (data && !error) {
-                  setUsers(data);
+        // Use robust channel creation
+        const channel = createRealtimeChannel('public:users');
+        
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
+            schema: 'public',
+            table: 'users'
+          },
+          async (payload) => {
+            if (payload.new && payload.new.id && payload.new.status) {
+              // Update local status state
+              setOnlineStatus(prev => ({
+                ...prev,
+                [payload.new.id]: {
+                  status: payload.new.status,
+                  lastSeen: payload.new.last_seen
                 }
+              }));
+              
+              // Refetch the entire users list when any change occurs
+              const { data, error } = await supabase
+                .from('users')
+                .select('id, username, email, avatar_url, status, last_seen')
+                .neq('id', currentUser.id);
+
+              if (data && !error) {
+                setUsers(data);
               }
             }
-          )
-          .subscribe();
-
+          }
+        );
+        
+        // Use retry-enabled subscribe method
+        subscribeWithRetry(channel);
         subscriptionRef.current = channel;
       }
     };
