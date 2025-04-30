@@ -7,16 +7,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   realtime: {
     params: {
       eventsPerSecond: 10
-    },
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`
     }
-  },
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false
   },
   global: {
     fetch: (...args) => fetch(...args)
