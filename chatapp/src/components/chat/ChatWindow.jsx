@@ -5,9 +5,6 @@ import '../../styles/chat.css'; /* Voice button custom styles */
 import WaveSurferPlayer from './WaveSurferPlayer';
 import MusicPlayer from './MusicPlayer';
 
-// Maximum time in milliseconds before considering a user offline (3 minutes)
-const PRESENCE_TIMEOUT = 3 * 60 * 1000;
-
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"></circle>
@@ -67,14 +64,8 @@ const ChatWindow = ({
   const [recordingTime, setRecordingTime] = useState(0);
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [audioChunks, setAudioChunks] = useState([]);
-  const [userStatus, setUserStatus] = useState('offline');
-  const [lastSeen, setLastSeen] = useState(null);
   const messagesEndRef = useRef(null);
   const subscriptionRef = useRef(null);
-  const statusSubscriptionRef = useRef(null);
-  const presenceChannelRef = useRef(null);
-  const heartbeatIntervalRef = useRef(null);
-  const checkInactiveIntervalRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentMenuRef = useRef(null);
   const recordingTimerRef = useRef(null);
@@ -112,268 +103,15 @@ const ChatWindow = ({
     scrollToBottom();
   }, [messages]);
 
-  // Fetch current user and setup presence channel
+  // Fetch current user
   useEffect(() => {
     const fetchCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
-      
-      if (user) {
-        // Initialize presence channel for real-time online status
-        const presenceChannel = supabase.channel('online-users', {
-          config: {
-            presence: {
-              key: user.id,
-            },
-          },
-        });
-
-        // When user comes online, update their status
-        presenceChannel
-          .on('presence', { event: 'join' }, ({ key }) => {
-            // Update status to 'online' when a user joins
-            updateUserStatus(key, 'online');
-          })
-          .on('presence', { event: 'leave' }, async ({ key }) => {
-            // Update status to 'offline' when a user leaves
-            updateUserStatus(key, 'offline');
-          })
-          .on('presence', { event: 'sync' }, () => {
-            // Get current state of all presences
-            const state = presenceChannel.presenceState();
-            
-            // Check if selected user is in the presence state
-            if (selectedUser && state[selectedUser.id]) {
-              setUserStatus('online');
-            }
-          })
-          .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-              // Track current user's online status
-              await presenceChannel.track({
-                online_at: new Date().toISOString(),
-                user_id: user.id
-              });
-              
-              // Set user as online in database
-              await updateUserStatus(user.id, 'online');
-            }
-          });
-          
-        presenceChannelRef.current = presenceChannel;
-        
-        // Set up heartbeat to keep status active
-        heartbeatIntervalRef.current = setInterval(async () => {
-          if (document.visibilityState === 'visible') {
-            // Only send heartbeat if document is visible (tab is active)
-            try {
-              // Update presence track with fresh timestamp
-              await presenceChannel.track({
-                online_at: new Date().toISOString(),
-                user_id: user.id
-              });
-              
-              // Refresh last_seen in database
-              await updateUserStatus(user.id, 'online');
-            } catch (error) {
-              console.error('Heartbeat error:', error);
-            }
-          }
-        }, 30000); // Every 30 seconds
-        
-        // Set up interval to check for inactive users
-        checkInactiveIntervalRef.current = setInterval(() => {
-          checkInactiveUsers();
-        }, 60000); // Check every minute
-        
-        // Initial check for inactive users
-        checkInactiveUsers();
-        
-        // Add visibility change listener to handle tab switching
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-      }
     };
     
     fetchCurrentUser();
-    
-    return () => {
-      if (presenceChannelRef.current && currentUser) {
-        // Remove user presence when component unmounts
-        presenceChannelRef.current.untrack();
-        presenceChannelRef.current.unsubscribe();
-        
-        // Update status to offline in database
-        updateUserStatus(currentUser.id, 'offline');
-      }
-      
-      // Clear intervals
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-      }
-      
-      if (checkInactiveIntervalRef.current) {
-        clearInterval(checkInactiveIntervalRef.current);
-      }
-      
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, []);
-  
-  // Check for users who haven't updated their last_seen in a while
-  const checkInactiveUsers = async () => {
-    if (!selectedUser) return;
-    
-    const now = new Date();
-    
-    // Get selected user's status
-    const { data } = await supabase
-      .from('users')
-      .select('id, status, last_seen')
-      .eq('id', selectedUser.id)
-      .single();
-      
-    if (!data) return;
-    
-    // Check if user is online but hasn't updated last_seen recently
-    if (data.status === 'online' && data.last_seen) {
-      const lastSeen = new Date(data.last_seen);
-      const timeDiff = now - lastSeen;
-      
-      // If last seen is more than PRESENCE_TIMEOUT ago, mark as offline
-      if (timeDiff > PRESENCE_TIMEOUT) {
-        await supabase
-          .from('users')
-          .update({ status: 'offline' })
-          .eq('id', data.id);
-          
-        // Update local state
-        setUserStatus('offline');
-        setLastSeen(data.last_seen);
-      }
-    }
-  };
-  
-  // Handle visibility change (tab switching)
-  const handleVisibilityChange = async () => {
-    if (!currentUser) return;
-    
-    if (document.visibilityState === 'visible') {
-      // User returned to the tab - set status to online
-      await updateUserStatus(currentUser.id, 'online');
-      
-      // Update presence tracking
-      if (presenceChannelRef.current) {
-        await presenceChannelRef.current.track({
-          online_at: new Date().toISOString(),
-          user_id: currentUser.id
-        });
-      }
-    } else {
-      // User left the tab - set status to away
-      await updateUserStatus(currentUser.id, 'away');
-    }
-  };
-  
-  // Helper function to update user status
-  const updateUserStatus = async (userId, status) => {
-    try {
-      await supabase
-        .from('users')
-        .update({ 
-          status: status,
-          last_seen: new Date().toISOString()
-        })
-        .eq('id', userId);
-    } catch (error) {
-      console.error('Error updating user status:', error);
-    }
-  };
-  
-  // Subscribe to selected user's status changes
-  useEffect(() => {
-    if (!selectedUser) return;
-    
-    // Fetch initial status
-    const fetchUserStatus = async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('status, last_seen')
-        .eq('id', selectedUser.id)
-        .single();
-      
-      if (data && !error) {
-        // Check if the last_seen is too old (user might be offline despite DB status)
-        const now = new Date();
-        const lastSeen = new Date(data.last_seen);
-        const timeDiff = now - lastSeen;
-        
-        if (data.status === 'online' && timeDiff > PRESENCE_TIMEOUT) {
-          // If user hasn't been seen for more than timeout, mark as offline
-          setUserStatus('offline');
-          
-          // Also update in database
-          await supabase
-            .from('users')
-            .update({ status: 'offline' })
-            .eq('id', selectedUser.id);
-        } else {
-          setUserStatus(data.status);
-        }
-        
-        setLastSeen(data.last_seen);
-      }
-    };
-    
-    fetchUserStatus();
-    
-    // Set up real-time subscription to status changes
-    if (statusSubscriptionRef.current) {
-      statusSubscriptionRef.current.unsubscribe();
-    }
-    
-    const channel = supabase.channel('public:users')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'users',
-          filter: `id=eq.${selectedUser.id}`
-        },
-        (payload) => {
-          if (payload.new && payload.new.status) {
-            setUserStatus(payload.new.status);
-            setLastSeen(payload.new.last_seen);
-          }
-        }
-      )
-      .subscribe();
-    
-    statusSubscriptionRef.current = channel;
-    
-    return () => {
-      if (statusSubscriptionRef.current) {
-        statusSubscriptionRef.current.unsubscribe();
-      }
-    };
-  }, [selectedUser?.id]);
-  
-  // Additional check when selectedUser changes
-  useEffect(() => {
-    if (selectedUser && presenceChannelRef.current) {
-      // Check if the selected user is in the presence state
-      const state = presenceChannelRef.current.presenceState();
-      const isPresent = state[selectedUser.id] !== undefined;
-      
-      if (isPresent) {
-        setUserStatus('online');
-      } else {
-        // If not present, we still respect the database status,
-        // which will be checked for timeout elsewhere
-        checkInactiveUsers();
-      }
-    }
-  }, [selectedUser]);
 
   // Fetch messages function
   const fetchMessages = async () => {
@@ -924,24 +662,6 @@ const ChatWindow = ({
     }
   };
 
-  // Format last seen time
-  const formatLastSeen = (timestamp) => {
-    if (!timestamp) return '';
-    
-    const lastSeenDate = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now - lastSeenDate;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-    
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins} min ago`;
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    if (diffDays === 1) return 'yesterday';
-    return lastSeenDate.toLocaleDateString();
-  };
-
   // Add useEffect to detect mobile device
   useEffect(() => {
     const checkMobile = () => {
@@ -973,8 +693,9 @@ const ChatWindow = ({
       </div>
     );
   }
+  
   return (
-    <div className="chat-window">
+    <div className={`chat-window ${isRecording || isVideoRecording ? 'recording-active' : ''}`}>
       {!hideHeader && (
         <div className="chat-header">
           <div className="header-left">
@@ -992,11 +713,6 @@ const ChatWindow = ({
             )}
             <div className="user-info">
               <h3 className="username">{selectedUser.username}</h3>
-              <p className={`user-status ${userStatus}`}>
-                {userStatus === 'online' ? 'Online' : 
-                 userStatus === 'away' ? 'Away' : 
-                 `Last seen ${formatLastSeen(lastSeen)}`}
-              </p>
             </div>
           </div>
           <div className="header-right">
