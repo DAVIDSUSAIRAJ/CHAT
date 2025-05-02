@@ -146,34 +146,47 @@ const ChatWindow = ({
 
     fetchMessages();
 
-    const channel = supabase.channel('public:chat')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'chat'
-        },
-        async (payload) => {
-          if (!payload.new || !payload.new.id) return;
+    // Get the session to use for authentication
+    const setupRealtimeSubscription = async () => {
+      // Get current session with auth token
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('No active session found for realtime subscription');
+        return;
+      }
+      
+      const channel = supabase.channel('public:chat')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'chat'
+          },
+          async (payload) => {
+            if (!payload.new || !payload.new.id) return;
 
-          const newMessage = payload.new;
-          const isRelevantMessage = 
-            (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
-            (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
+            const newMessage = payload.new;
+            const isRelevantMessage = 
+              (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
+              (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
 
-          if (isRelevantMessage) {
-            setMessages(prevMessages => {
-              const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
-              if (messageExists) return prevMessages;
-              return [...prevMessages, newMessage];
-            });
+            if (isRelevantMessage) {
+              setMessages(prevMessages => {
+                const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
+                if (messageExists) return prevMessages;
+                return [...prevMessages, newMessage];
+              });
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    subscriptionRef.current = channel;
+      subscriptionRef.current = channel;
+    };
+
+    setupRealtimeSubscription();
 
     return () => {
       if (subscriptionRef.current) {
