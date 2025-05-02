@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, createRealtimeChannel } from '../../lib/supabaseClient';
 import { toast } from 'react-toastify';
 import '../../styles/chat.css'; /* Voice button custom styles */
 import WaveSurferPlayer from './WaveSurferPlayer';
@@ -148,17 +148,20 @@ const ChatWindow = ({
     // Fetch current messages
     fetchMessages();
   
-    // ✅ Listen for auth state to be hydrated
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!session) {
-        console.warn('No session, skipping Realtime');
-        return;
-      }
+    // Create a reference to track if the component is mounted
+    let isMounted = true;
   
-      console.log('✅ Session from onAuthStateChange:', session);
-  
-      const channel = supabase.channel('public:chat')
-        .on(
+    // Use the new helper function to create a channel only after auth is ready
+    const setupChannel = async () => {
+      try {
+        // Create the channel using our helper that ensures auth is ready
+        const channel = await createRealtimeChannel('public:chat');
+        
+        // If component unmounted during async operation, don't proceed
+        if (!isMounted || !channel) return;
+        
+        // Set up the subscription
+        channel.on(
           'postgres_changes',
           {
             event: '*',
@@ -182,14 +185,22 @@ const ChatWindow = ({
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log(`Realtime subscription status: ${status}`);
+        });
   
-      subscriptionRef.current = channel;
-    });
+        subscriptionRef.current = channel;
+      } catch (error) {
+        console.error('Error setting up realtime channel:', error);
+      }
+    };
+  
+    // Start the setup process
+    setupChannel();
   
     // ✅ Cleanup
     return () => {
-      authListener.subscription.unsubscribe();
+      isMounted = false;
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
       }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { supabase, createRealtimeChannel } from '../../lib/supabaseClient';
 
 // Maximum time in milliseconds before considering a user offline (3 minutes)
 const PRESENCE_TIMEOUT = 3 * 60 * 1000;
@@ -45,74 +45,40 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
         }
         
         // Initialize presence channel for real-time online status
-        const presenceChannel = supabase.channel('online-users', {
-          config: {
-            presence: {
-              key: currentUser.id,
+        try {
+          const presenceChannel = await createRealtimeChannel('online-users', {
+            config: {
+              presence: {
+                key: currentUser.id,
+              },
             },
-          },
-        });
-
-        // When user comes online, update their status in database
-        presenceChannel
-          .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-            // Update status to 'online' when a user joins
-            updateUserStatus(key, 'online');
-          })
-          .on('presence', { event: 'leave' }, async ({ key }) => {
-            // Update status to 'offline' when a user leaves
-            updateUserStatus(key, 'offline');
-          })
-          .on('presence', { event: 'sync' }, () => {
-            // Get current state of all presences
-            const state = presenceChannel.presenceState();
-            
-            // Track all present users
-            const presentUserIds = new Set();
-            for (const presence in state) {
-              presentUserIds.add(presence);
-            }
-            
-            // Update status for all users based on presence
-            setOnlineStatus(prev => {
-              const newStatus = { ...prev };
-              Object.keys(newStatus).forEach(userId => {
-                if (presentUserIds.has(userId)) {
-                  newStatus[userId] = {
-                    ...newStatus[userId],
-                    status: 'online'
-                  };
-                } else if (newStatus[userId].status === 'online') {
-                  // Only change status if it was previously online
-                  newStatus[userId] = {
-                    ...newStatus[userId],
-                    status: 'offline'
-                  };
-                }
-              });
-              return newStatus;
-            });
-          })
-          .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-              // Track current user's online status
-              await presenceChannel.track({
-                online_at: new Date().toISOString(),
-                user_id: currentUser.id
-              });
-              
-              // Set user as online in database
-              await supabase
-                .from('users')
-                .update({ 
-                  status: 'online',
-                  last_seen: new Date().toISOString()
-                })
-                .eq('id', currentUser.id);
-            }
           });
           
-        presenceChannelRef.current = presenceChannel;
+          if (presenceChannel) {
+            presenceChannel.subscribe(async (status) => {
+              if (status === 'SUBSCRIBED') {
+                // Track current user's online status
+                await presenceChannel.track({
+                  online_at: new Date().toISOString(),
+                  user_id: currentUser.id
+                });
+                
+                // Set user as online in database
+                await supabase
+                  .from('users')
+                  .update({ 
+                    status: 'online',
+                    last_seen: new Date().toISOString()
+                  })
+                  .eq('id', currentUser.id);
+              }
+            });
+            
+            presenceChannelRef.current = presenceChannel;
+          }
+        } catch (error) {
+          console.error('Error setting up presence channel:', error);
+        }
         
         // Set up heartbeat to keep status active
         heartbeatIntervalRef.current = setInterval(async () => {
@@ -164,8 +130,15 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
           subscriptionRef.current.unsubscribe();
         }
 
-        const channel = supabase.channel('public:users')
-          .on(
+        try {
+          const channel = await createRealtimeChannel('public:users');
+          
+          if (!channel) {
+            console.warn('Failed to create users channel');
+            return;
+          }
+          
+          channel.on(
             'postgres_changes',
             {
               event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
@@ -195,9 +168,14 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
               }
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+            console.log(`Users subscription status: ${status}`);
+          });
 
-        subscriptionRef.current = channel;
+          subscriptionRef.current = channel;
+        } catch (error) {
+          console.error('Error setting up users channel:', error);
+        }
       }
     };
 

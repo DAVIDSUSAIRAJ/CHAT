@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from './lib/supabase';
+import { supabase, createRealtimeChannel } from './lib/supabaseClient';
 
 const StatusDebugTool = () => {
   const [users, setUsers] = useState([]);
@@ -22,39 +22,46 @@ const StatusDebugTool = () => {
         setUsers(allUsers);
       }
       
-      // Subscribe to presence channel to monitor online users
-      const channel = supabase.channel('online-users', {
-        config: {
-          presence: {
-            key: user?.id || 'anonymous',
+      try {
+        // Subscribe to presence channel to monitor online users
+        const channel = await createRealtimeChannel('online-users', {
+          config: {
+            presence: {
+              key: user?.id || 'anonymous',
+            },
           },
-        },
-      });
-      
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          setPresenceState(channel.presenceState());
-        })
-        .subscribe();
+        });
         
-      // Set up interval to refresh data every 5 seconds
-      const interval = setInterval(async () => {
-        const { data: refreshedUsers } = await supabase
-          .from('users')
-          .select('*')
-          .order('username');
+        if (channel) {
+          channel
+            .on('presence', { event: 'sync' }, () => {
+              setPresenceState(channel.presenceState());
+            })
+            .subscribe();
+            
+          // Set up interval to refresh data every 5 seconds
+          const interval = setInterval(async () => {
+            const { data: refreshedUsers } = await supabase
+              .from('users')
+              .select('*')
+              .order('username');
+              
+            if (refreshedUsers) {
+              setUsers(refreshedUsers);
+            }
+            
+            setPresenceState(channel.presenceState());
+          }, 5000);
           
-        if (refreshedUsers) {
-          setUsers(refreshedUsers);
+          return () => {
+            clearInterval(interval);
+            channel.unsubscribe();
+          };
         }
-        
-        setPresenceState(channel.presenceState());
-      }, 5000);
-      
-      return () => {
-        clearInterval(interval);
-        channel.unsubscribe();
-      };
+      } catch (error) {
+        console.error('Error setting up presence channel in debug tool:', error);
+        return () => {};
+      }
     };
     
     fetchData();
