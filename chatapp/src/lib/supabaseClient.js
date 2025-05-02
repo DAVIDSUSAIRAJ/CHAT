@@ -77,102 +77,103 @@ export const createPollingChannel = (options = {}) => {
     onRecords,
     userId,
     targetUserId 
-  } = options
+  } = options;
   
   // Track if polling is active
-  let isActive = true
-  let lastTimestamp = new Date().toISOString()
-  let timeoutId = null
+  let isActive = true;
+  let lastTimestamp = new Date().toISOString();
+  let timeoutId = null;
+  let callback = onRecords; // Store callback
   
   // Function to fetch new records
   const fetchRecords = async () => {
-    if (!isActive) return
+    if (!isActive) return;
     
     try {
       // Get session
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        console.log("❌ No session found for polling")
+        console.log("❌ No session found for polling");
         // Try again later
-        timeoutId = setTimeout(fetchRecords, interval)
-        return
+        timeoutId = setTimeout(fetchRecords, interval);
+        return;
       }
       
       // Build query
       let query = supabase
         .from(table)
-        .select('*')
+        .select('*');
       
       // Add created_at filter to only get new records
-      query = query.gt('created_at', lastTimestamp)
+      query = query.gt('created_at', lastTimestamp);
       
       // Add filter if provided
       if (filter) {
-        const { column, value } = filter
+        const { column, value } = filter;
         if (column && value !== undefined) {
-          query = query.eq(column, value)
+          query = query.eq(column, value);
         }
       }
       
       // Add user filters for chat messages if user IDs provided
       if (table === 'chat' && userId && targetUserId) {
-        query = query.or(`and(sender_id.eq.${userId},receiver_id.eq.${targetUserId}),and(sender_id.eq.${targetUserId},receiver_id.eq.${userId})`)
+        query = query.or(`and(sender_id.eq.${userId},receiver_id.eq.${targetUserId}),and(sender_id.eq.${targetUserId},receiver_id.eq.${userId})`);
       }
       
       // Execute query
-      const { data, error } = await query.order('created_at', { ascending: true })
+      const { data, error } = await query.order('created_at', { ascending: true });
       
       if (error) {
-        console.error("Error polling data:", error)
+        console.error("Error polling data:", error);
       } else if (data && data.length > 0) {
         // Update last timestamp
-        lastTimestamp = data[data.length - 1].created_at
+        lastTimestamp = data[data.length - 1].created_at;
         
         // Call callback with new records
-        if (onRecords) {
+        if (callback) {
           data.forEach(record => {
-            onRecords({
+            callback({
               new: record,
               eventType: 'INSERT',
               schema,
               table
-            })
-          })
+            });
+          });
         }
       }
     } catch (error) {
-      console.error("Error in polling:", error)
+      console.error("Error in polling:", error);
     }
     
     // Schedule next poll if still active
     if (isActive) {
-      timeoutId = setTimeout(fetchRecords, interval)
+      timeoutId = setTimeout(fetchRecords, interval);
     }
-  }
+  };
   
-  // Start polling
-  timeoutId = setTimeout(fetchRecords, 100) // Start quickly
-  
-  // Return an object that mimics a Supabase channel interface
-  return {
-    on: (_, __, callback) => {
+  // Create the object to return
+  const pollingChannel = {
+    on: (_, __, cb) => {
       // Store callback
-      options.onRecords = callback
+      callback = cb;
       // Return self for chaining
-      return this
+      return pollingChannel;
     },
-    subscribe: (callback) => {
-      if (callback) callback('SUBSCRIBED')
-      fetchRecords() // Start polling
-      return this
+    subscribe: (statusCallback) => {
+      if (statusCallback) statusCallback('SUBSCRIBED');
+      // Start polling after a short delay
+      setTimeout(fetchRecords, 100);
+      return pollingChannel;
     },
     unsubscribe: () => {
-      isActive = false
-      if (timeoutId) clearTimeout(timeoutId)
-      return this
+      isActive = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      return pollingChannel;
     }
-  }
-}
+  };
+  
+  return pollingChannel;
+};
 
 /**
  * Create a channel for real-time updates (either WebSocket or polling)

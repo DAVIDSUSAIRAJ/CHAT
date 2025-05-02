@@ -151,7 +151,9 @@ const ChatWindow = ({
         // Try to create the channel with user IDs for filtering messages
         channel = await createRealtimeChannel('public:chat', {
           userId: userId,
-          targetUserId: targetUserId
+          targetUserId: targetUserId,
+          // Force polling in production to avoid WebSocket issues
+          forcePolling: process.env.NODE_ENV === 'production'
         });
         
         if (!channel) {
@@ -164,9 +166,9 @@ const ChatWindow = ({
           continue;
         }
         
-        // Set up the subscription and return the channel if successful
-        channel
-          .on(
+        // Try to set up the subscription
+        try {
+          channel.on(
             'postgres_changes',
             {
               event: '*',
@@ -185,6 +187,22 @@ const ChatWindow = ({
               setConnectionStatus('error');
             }
           });
+        } catch (subscribeError) {
+          console.error('❌ Error subscribing to channel:', subscribeError);
+          // If we can't subscribe, clean up and try again
+          if (channel.unsubscribe) {
+            try {
+              channel.unsubscribe();
+            } catch (e) {}
+          }
+          channel = null;
+          
+          if (attempts < maxRetries) {
+            const delay = 1000 * attempts;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
         
         // If we got this far, we have a working channel
         if (channel) {
@@ -261,16 +279,32 @@ const ChatWindow = ({
         setConnectionStatus('fallback');
         setConnectionType('polling-fallback');
         
-        // Fallback to polling as a last resort
-        const pollingInterval = setInterval(async () => {
+        // Create a simple polling fallback that doesn't rely on Supabase Realtime
+        const pollMessages = async () => {
           if (!isMounted) return;
-          console.log('🔄 Polling for messages as fallback');
-          await fetchMessages();
-        }, 3000);
+          
+          try {
+            console.log('🔄 Polling for messages as fallback');
+            await fetchMessages();
+          } catch (error) {
+            console.error('Error in fallback polling:', error);
+          }
+          
+          if (isMounted) {
+            // Continue polling
+            setTimeout(pollMessages, 3000);
+          }
+        };
         
-        // Store the interval ID for cleanup
+        // Start polling
+        pollMessages();
+        
+        // Store cleanup function
         subscriptionRef.current = {
-          unsubscribe: () => clearInterval(pollingInterval),
+          unsubscribe: () => { 
+            console.log('Cleaning up polling fallback');
+            isMounted = false; 
+          },
           isPollingFallback: true
         };
       }
