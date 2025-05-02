@@ -6,7 +6,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 // Detect if we're in production
 const isProduction = process.env.NODE_ENV === 'production'
 
-// Configure WebSocket behavior based on environment
+// Create options with basic configuration
 const options = {
   auth: {
     autoRefreshToken: true,
@@ -14,12 +14,10 @@ const options = {
   },
   // In production, disable realtime by default since Vercel seems to have WebSocket issues
   realtime: {
-    // Disable WebSockets in production by default
-    eventsPerSecond: 10,
-    // Completely disable WebSockets in production
-    wsEnabled: process.env.NODE_ENV !== 'production',
-    // Additional safeguard to completely disable realtime in production
-    enabled: process.env.NODE_ENV !== 'production'
+    // Completely disable WebSockets and realtime in production
+    eventsPerSecond: isProduction ? 0 : 10,
+    wsEnabled: !isProduction,
+    enabled: !isProduction
   },
   global: {
     headers: { 'X-Client-Info': isProduction ? 'vercel-deployment' : 'localhost' }
@@ -29,6 +27,41 @@ const options = {
 // Create the Supabase client
 export const supabase = createClient(supabaseUrl, supabaseKey, options)
 
+// Add bearer token to all requests when available
+supabase.auth.onAuthStateChange((event, session) => {
+  if (session && session.access_token) {
+    // Update the client's global headers with the bearer token
+    supabase.realtime.setAuth(session.access_token)
+    
+    // Also set for regular HTTP requests
+    supabase.functions.setAuth(session.access_token)
+    
+    // Force update global headers
+    supabase.rest.headers['Authorization'] = `Bearer ${session.access_token}`
+    
+    console.log('✅ Authentication token added to headers')
+  }
+})
+
+// Completely block WebSockets in production
+if (isProduction) {
+  // Override channel creation to always use polling
+  const originalChannel = supabase.channel
+  supabase.channel = function(...args) {
+    console.log('⚠️ WebSocket channel creation blocked in production, using polling instead')
+    
+    // Create a dummy channel that will prevent WebSocket connection
+    return {
+      on: function() { return this },
+      subscribe: function(callback) {
+        console.log('⚠️ WebSocket subscribe attempt blocked, using polling')
+        if (callback) callback('CHANNEL_ERROR')
+        return this
+      }
+    }
+  }
+}
+
 // Function to check if authentication is ready
 export const waitForAuthReady = async () => {
   try {
@@ -36,6 +69,19 @@ export const waitForAuthReady = async () => {
     const { data } = await supabase.auth.getSession()
     if (data?.session) {
       console.log("✅ Session found immediately")
+      
+      // Ensure bearer token is set in headers
+      if (data.session.access_token) {
+        // Set auth token for realtime connections
+        supabase.realtime.setAuth(data.session.access_token)
+        
+        // Set for function calls
+        supabase.functions.setAuth(data.session.access_token)
+        
+        // Set for REST API calls
+        supabase.rest.headers['Authorization'] = `Bearer ${data.session.access_token}`
+      }
+      
       return data.session
     }
     
@@ -45,6 +91,19 @@ export const waitForAuthReady = async () => {
       const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
         if (session) {
           console.log("✅ Session received from auth state change")
+          
+          // Ensure bearer token is set in headers
+          if (session.access_token) {
+            // Set auth token for realtime connections
+            supabase.realtime.setAuth(session.access_token)
+            
+            // Set for function calls
+            supabase.functions.setAuth(session.access_token)
+            
+            // Set for REST API calls
+            supabase.rest.headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+          
           authListener.subscription.unsubscribe()
           resolve(session)
         } else if (event === 'SIGNED_OUT') {
@@ -58,6 +117,14 @@ export const waitForAuthReady = async () => {
       setTimeout(async () => {
         authListener.subscription.unsubscribe()
         const { data: lastCheck } = await supabase.auth.getSession()
+        
+        // One last attempt to set headers
+        if (lastCheck?.session?.access_token) {
+          supabase.realtime.setAuth(lastCheck.session.access_token)
+          supabase.functions.setAuth(lastCheck.session.access_token)
+          supabase.rest.headers['Authorization'] = `Bearer ${lastCheck.session.access_token}`
+        }
+        
         resolve(lastCheck?.session || null)
       }, 2000)
     })
@@ -80,7 +147,8 @@ export const createPollingChannel = (options = {}) => {
     interval = 3000, // Poll every 3 seconds by default
     onRecords,
     userId,
-    targetUserId 
+    targetUserId,
+    session
   } = options;
   
   // Track if polling is active
@@ -94,9 +162,20 @@ export const createPollingChannel = (options = {}) => {
     if (!isActive) return;
     
     try {
-      // Get session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      // Get current session if not provided
+      let currentSession = session;
+      if (!currentSession) {
+        const { data } = await supabase.auth.getSession();
+        currentSession = data?.session;
+      }
+      
+      // Ensure we have an auth token for the request
+      if (currentSession?.access_token) {
+        // Update the authentication token for this request
+        supabase.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+      }
+      
+      if (!currentSession) {
         console.log("❌ No session found for polling");
         // Try again later
         timeoutId = setTimeout(fetchRecords, interval);
