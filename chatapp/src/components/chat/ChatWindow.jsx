@@ -307,19 +307,27 @@ const ChatWindow = ({
     };
   };
 
+  // Add this helper function at the top level of the component
+  const safeUnsubscribe = (subscription) => {
+    if (!subscription) return;
+    
+    try {
+      if (typeof subscription.unsubscribe === 'function') {
+        subscription.unsubscribe();
+      }
+    } catch (error) {
+      console.log('Safely handled unsubscribe error:', error.message);
+    }
+  };
+
+  // Modify the useEffect to properly track selectedUser changes
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
 
-    // Unsubscribe any previous channel
-    if (subscriptionRef.current) {
-      // Safety check to prevent TypeError
-      if (typeof subscriptionRef.current.unsubscribe === 'function') {
-        subscriptionRef.current.unsubscribe();
-      } else {
-        console.log('Warning: Subscription does not have unsubscribe method');
-      }
-    }
-
+    // IMPORTANT: Reset subscription reference when selectedUser changes
+    // This prevents unsubscribe errors when switching users
+    subscriptionRef.current = null;
+    
     // Fetch current messages
     fetchMessages();
 
@@ -404,17 +412,14 @@ const ChatWindow = ({
 
     // Cleanup
     return () => {
+      console.log(`Cleaning up subscription for user ${selectedUser.id}`);
       isMounted = false;
-      if (subscriptionRef.current) {
-        // Safety check for unsubscribe method
-        if (typeof subscriptionRef.current.unsubscribe === 'function') {
-          try {
-            subscriptionRef.current.unsubscribe();
-          } catch (error) {
-            console.log('Error during unsubscribe:', error);
-          }
-        }
-      }
+      
+      // Use our safe unsubscribe helper
+      safeUnsubscribe(subscriptionRef.current);
+      
+      // Clear the ref to prevent double cleanup attempts
+      subscriptionRef.current = null;
     };
   }, [selectedUser, currentUser]);
 
