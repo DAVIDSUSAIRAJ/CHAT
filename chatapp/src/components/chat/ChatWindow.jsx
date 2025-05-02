@@ -139,48 +139,62 @@ const ChatWindow = ({
 
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
-
+  
     if (subscriptionRef.current) {
       subscriptionRef.current.unsubscribe();
     }
-
+  
     fetchMessages();
-
-    const channel = supabase.channel('public:chat')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'chat'
-        },
-        async (payload) => {
-          if (!payload.new || !payload.new.id) return;
-
-          const newMessage = payload.new;
-          const isRelevantMessage = 
-            (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
-            (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
-
-          if (isRelevantMessage) {
-            setMessages(prevMessages => {
-              const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
-              if (messageExists) return prevMessages;
-              return [...prevMessages, newMessage];
-            });
+  
+    const setupRealtime = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+  
+      if (!session) {
+        console.warn('No session, skipping Realtime');
+        return;
+      }
+  
+      console.log('Session:', session); // ✅ Optional debug
+  
+      const channel = supabase.channel('public:chat')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'chat'
+          },
+          async (payload) => {
+            if (!payload.new || !payload.new.id) return;
+  
+            const newMessage = payload.new;
+            const isRelevantMessage =
+              (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
+              (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
+  
+            if (isRelevantMessage) {
+              setMessages(prevMessages => {
+                const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
+                if (messageExists) return prevMessages;
+                return [...prevMessages, newMessage];
+              });
+            }
           }
-        }
-      )
-      .subscribe();
-
-    subscriptionRef.current = channel;
-
+        )
+        .subscribe();
+  
+      subscriptionRef.current = channel;
+    };
+  
+    setupRealtime();
+  
     return () => {
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
       }
     };
   }, [selectedUser, currentUser]);
+  
 
   const handleSendMessage = async (e) => {
     e.preventDefault();

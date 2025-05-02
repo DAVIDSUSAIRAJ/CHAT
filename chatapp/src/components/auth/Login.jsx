@@ -12,31 +12,35 @@ const Login = () => {
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  try {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      if (error) {
-        if (error.message.includes('email')) {
-          emailRef.current.focus();
-        } else if (error.message.includes('password')) {
-          passwordRef.current.focus();
-        }
-        throw error;
+    if (error) {
+      if (error.message.includes('email')) {
+        emailRef.current.focus();
+      } else if (error.message.includes('password')) {
+        passwordRef.current.focus();
       }
-      navigate('/chat');
-    } catch (error) {
-      toast.error(error.message);
-    } finally {
-      setLoading(false);
+      throw error;
     }
-  };
+
+    const { data: { session }, error1 } = await supabase.auth.getSession();
+    console.log('Session:', session);
+
+    navigate('/chat');
+  } catch (error) {
+    toast.error(error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="auth-container">
