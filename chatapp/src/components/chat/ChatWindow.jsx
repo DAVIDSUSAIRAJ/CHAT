@@ -88,6 +88,7 @@ const ChatWindow = ({
   const videoPreviewRef = useRef(null);
   const videoStreamRef = useRef(null);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
 
   const actualSearchText = isMobileView ? externalSearchText : searchText;
   const actualSetSearchText = isMobileView ? externalSetSearchText : setSearchText;
@@ -137,68 +138,144 @@ const ChatWindow = ({
     setMessages(data || []);
   };
 
+  const setupChannelWithRetry = async (userId, targetUserId, onMessageReceived, maxRetries = 3) => {
+    let channel = null;
+    let attempts = 0;
+    
+    while (attempts < maxRetries && !channel) {
+      attempts++;
+      console.log(`🔄 Channel connection attempt ${attempts}/${maxRetries}`);
+      
+      try {
+        // Try to create the channel
+        channel = await createRealtimeChannel('public:chat');
+        
+        if (!channel) {
+          if (attempts < maxRetries) {
+            // Wait longer with each retry
+            const delay = 1000 * attempts;
+            console.log(`⏳ Waiting ${delay}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          continue;
+        }
+        
+        // Set up the subscription and return the channel if successful
+        channel
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'chat'
+            },
+            onMessageReceived
+          )
+          .subscribe((status) => {
+            console.log(`Realtime subscription status: ${status}`);
+            
+            // Update connection status
+            if (status === 'SUBSCRIBED') {
+              setConnectionStatus('connected');
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              setConnectionStatus('error');
+              console.log('⚠️ Channel subscription failed, will retry...');
+              channel.unsubscribe();
+              channel = null;
+              
+              if (attempts < maxRetries) {
+                setTimeout(() => {
+                  setupChannelWithRetry(userId, targetUserId, onMessageReceived, maxRetries - attempts);
+                }, 2000);
+              }
+            }
+          });
+        
+        // If we got this far, we have a working channel
+        if (channel) {
+          console.log('✅ Channel setup successful!');
+        }
+        
+      } catch (error) {
+        console.error('❌ Error in channel setup:', error);
+        channel = null;
+        
+        if (attempts < maxRetries) {
+          const delay = 1000 * attempts;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    return channel;
+  };
+
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
-  
+
     // Unsubscribe any previous channel
     if (subscriptionRef.current) {
       subscriptionRef.current.unsubscribe();
     }
-  
+
     // Fetch current messages
     fetchMessages();
-  
+
     // Create a reference to track if the component is mounted
     let isMounted = true;
-  
-    // Use the new helper function to create a channel only after auth is ready
-    const setupChannel = async () => {
-      try {
-        // Create the channel using our helper that ensures auth is ready
-        const channel = await createRealtimeChannel('public:chat');
-        
-        // If component unmounted during async operation, don't proceed
-        if (!isMounted || !channel) return;
-        
-        // Set up the subscription
-        channel.on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chat'
-          },
-          async (payload) => {
-            if (!payload.new || !payload.new.id) return;
-  
-            const newMessage = payload.new;
-            const isRelevantMessage =
-              (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
-              (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
-  
-            if (isRelevantMessage) {
-              setMessages(prevMessages => {
-                const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
-                if (messageExists) return prevMessages;
-                return [...prevMessages, newMessage];
-              });
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log(`Realtime subscription status: ${status}`);
+
+    // Define message handler to avoid code duplication
+    const handleMessage = async (payload) => {
+      if (!payload.new || !payload.new.id) return;
+
+      const newMessage = payload.new;
+      const isRelevantMessage =
+        (newMessage.sender_id === currentUser.id && newMessage.receiver_id === selectedUser.id) ||
+        (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUser.id);
+
+      if (isRelevantMessage) {
+        setMessages(prevMessages => {
+          const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
+          if (messageExists) return prevMessages;
+          return [...prevMessages, newMessage];
         });
-  
-        subscriptionRef.current = channel;
-      } catch (error) {
-        console.error('Error setting up realtime channel:', error);
       }
     };
-  
+
+    // Use the improved retry mechanism
+    const setup = async () => {
+      setConnectionStatus('connecting');
+      const channel = await setupChannelWithRetry(
+        currentUser.id,
+        selectedUser.id,
+        handleMessage
+      );
+      
+      if (channel && isMounted) {
+        subscriptionRef.current = channel;
+      } else if (isMounted) {
+        console.error('❌ Failed to establish realtime channel after retries');
+        // Set connection status to fallback
+        setConnectionStatus('fallback');
+        // Fallback to polling as a last resort
+        const pollingInterval = setInterval(async () => {
+          if (!isMounted) return;
+          console.log('🔄 Polling for messages as fallback');
+          await fetchMessages();
+        }, 3000);
+        
+        // Store the interval ID for cleanup
+        subscriptionRef.current = {
+          unsubscribe: () => clearInterval(pollingInterval),
+          isPollingFallback: true
+        };
+      }
+    };
+
     // Start the setup process
-    setupChannel();
-  
-    // ✅ Cleanup
+    setup();
+
+    // Cleanup
     return () => {
       isMounted = false;
       if (subscriptionRef.current) {
@@ -206,9 +283,6 @@ const ChatWindow = ({
       }
     };
   }, [selectedUser, currentUser]);
-  
-  
-  
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -1136,6 +1210,36 @@ const ChatWindow = ({
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Add connection status indicator */}
+      {process.env.NODE_ENV === 'production' && (
+        <div className={`connection-status ${connectionStatus}`}>
+          {connectionStatus === 'connecting' && (
+            <>
+              <span className="status-indicator pulsing"></span>
+              <span>Connecting...</span>
+            </>
+          )}
+          {connectionStatus === 'connected' && (
+            <>
+              <span className="status-indicator"></span>
+              <span>Real-time connected</span>
+            </>
+          )}
+          {connectionStatus === 'fallback' && (
+            <>
+              <span className="status-indicator warning"></span>
+              <span>Using polling fallback mode</span>
+            </>
+          )}
+          {connectionStatus === 'error' && (
+            <>
+              <span className="status-indicator error"></span>
+              <span>Connection issues - retrying...</span>
+            </>
+          )}
         </div>
       )}
 

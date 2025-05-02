@@ -1014,4 +1014,75 @@
     width: 90%;
     max-width: 300px;
   }
+}
+
+/* Connection status indicator */
+.connection-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  margin: 0 auto;
+  font-size: 12px;
+  color: #777;
+  transition: all 0.3s ease;
+  max-width: fit-content;
+  border-radius: 12px;
+  background: #f9f9f9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.connection-status.connecting {
+  background-color: #f5f5f5;
+}
+
+.connection-status.connected {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.connection-status.fallback {
+  background-color: #fff8e1;
+  color: #f57c00;
+}
+
+.connection-status.error {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background-color: #4caf50;
+}
+
+.status-indicator.warning {
+  background-color: #ffc107;
+}
+
+.status-indicator.error {
+  background-color: #f44336;
+}
+
+.status-indicator.pulsing {
+  background-color: #2196f3;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 } 
