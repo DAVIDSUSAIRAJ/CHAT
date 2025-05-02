@@ -259,28 +259,46 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
 
     // Cleanup subscription on component unmount
     return () => {
+      // Clean up subscriptions safely with error handling
       if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
-      }
-      
-      if (presenceChannelRef.current) {
-        // Remove user presence and unsubscribe
-        presenceChannelRef.current.untrack();
-        presenceChannelRef.current.unsubscribe();
-        
-        // Set user status to offline when component unmounts
-        if (currentUser) {
-          supabase
-            .from('users')
-            .update({ 
-              status: 'offline',
-              last_seen: new Date().toISOString()
-            })
-            .eq('id', currentUser.id);
+        try {
+          // Check if unsubscribe is a function before calling it
+          if (typeof subscriptionRef.current.unsubscribe === 'function') {
+            subscriptionRef.current.unsubscribe();
+          }
+        } catch (err) {
+          console.error('Error during user subscription cleanup:', err);
         }
       }
       
-      // Clear intervals
+      if (presenceChannelRef.current) {
+        try {
+          // Remove user presence if the untrack method exists
+          if (typeof presenceChannelRef.current.untrack === 'function') {
+            presenceChannelRef.current.untrack();
+          }
+          
+          // Unsubscribe if the method exists
+          if (typeof presenceChannelRef.current.unsubscribe === 'function') {
+            presenceChannelRef.current.unsubscribe();
+          }
+          
+          // Set user status to offline when component unmounts
+          if (currentUser) {
+            supabase
+              .from('users')
+              .update({ 
+                status: 'offline',
+                last_seen: new Date().toISOString()
+              })
+              .eq('id', currentUser.id);
+          }
+        } catch (err) {
+          console.error('Error during presence channel cleanup:', err);
+        }
+      }
+      
+      // Clear intervals safely
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
       }
@@ -290,7 +308,15 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
       }
       
       if (statusPollingIntervalRef.current) {
-        statusPollingIntervalRef.current();
+        try {
+          if (typeof statusPollingIntervalRef.current === 'function') {
+            statusPollingIntervalRef.current();
+          } else if (typeof statusPollingIntervalRef.current === 'number') {
+            clearInterval(statusPollingIntervalRef.current);
+          }
+        } catch (err) {
+          console.error('Error clearing status polling:', err);
+        }
       }
       
       document.removeEventListener('mousedown', handleClickOutside);

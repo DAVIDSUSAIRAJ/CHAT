@@ -312,7 +312,12 @@ const ChatWindow = ({
 
     // Unsubscribe any previous channel
     if (subscriptionRef.current) {
-      subscriptionRef.current.unsubscribe();
+      // Safety check to prevent TypeError
+      if (typeof subscriptionRef.current.unsubscribe === 'function') {
+        subscriptionRef.current.unsubscribe();
+      } else {
+        console.log('Warning: Subscription does not have unsubscribe method');
+      }
     }
 
     // Fetch current messages
@@ -401,7 +406,14 @@ const ChatWindow = ({
     return () => {
       isMounted = false;
       if (subscriptionRef.current) {
-        subscriptionRef.current.unsubscribe();
+        // Safety check for unsubscribe method
+        if (typeof subscriptionRef.current.unsubscribe === 'function') {
+          try {
+            subscriptionRef.current.unsubscribe();
+          } catch (error) {
+            console.log('Error during unsubscribe:', error);
+          }
+        }
       }
     };
   }, [selectedUser, currentUser]);
