@@ -89,6 +89,7 @@ const ChatWindow = ({
   const videoStreamRef = useRef(null);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [connectionType, setConnectionType] = useState('unknown');
 
   const actualSearchText = isMobileView ? externalSearchText : searchText;
   const actualSetSearchText = isMobileView ? externalSetSearchText : setSearchText;
@@ -147,8 +148,11 @@ const ChatWindow = ({
       console.log(`🔄 Channel connection attempt ${attempts}/${maxRetries}`);
       
       try {
-        // Try to create the channel
-        channel = await createRealtimeChannel('public:chat');
+        // Try to create the channel with user IDs for filtering messages
+        channel = await createRealtimeChannel('public:chat', {
+          userId: userId,
+          targetUserId: targetUserId
+        });
         
         if (!channel) {
           if (attempts < maxRetries) {
@@ -174,20 +178,11 @@ const ChatWindow = ({
           .subscribe((status) => {
             console.log(`Realtime subscription status: ${status}`);
             
-            // Update connection status
+            // Update connection status based on subscription status
             if (status === 'SUBSCRIBED') {
               setConnectionStatus('connected');
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
               setConnectionStatus('error');
-              console.log('⚠️ Channel subscription failed, will retry...');
-              channel.unsubscribe();
-              channel = null;
-              
-              if (attempts < maxRetries) {
-                setTimeout(() => {
-                  setupChannelWithRetry(userId, targetUserId, onMessageReceived, maxRetries - attempts);
-                }, 2000);
-              }
             }
           });
         
@@ -253,10 +248,19 @@ const ChatWindow = ({
       
       if (channel && isMounted) {
         subscriptionRef.current = channel;
+        
+        // Detect if we're using polling or WebSockets
+        if (process.env.NODE_ENV === 'production') {
+          setConnectionType('polling');
+        } else {
+          setConnectionType('websocket');
+        }
       } else if (isMounted) {
         console.error('❌ Failed to establish realtime channel after retries');
         // Set connection status to fallback
         setConnectionStatus('fallback');
+        setConnectionType('polling-fallback');
+        
         // Fallback to polling as a last resort
         const pollingInterval = setInterval(async () => {
           if (!isMounted) return;
@@ -1222,22 +1226,28 @@ const ChatWindow = ({
               <span>Connecting...</span>
             </>
           )}
-          {connectionStatus === 'connected' && (
+          {connectionStatus === 'connected' && connectionType === 'websocket' && (
             <>
               <span className="status-indicator"></span>
-              <span>Real-time connected</span>
+              <span>Real-time connected (WebSocket)</span>
+            </>
+          )}
+          {connectionStatus === 'connected' && connectionType === 'polling' && (
+            <>
+              <span className="status-indicator"></span>
+              <span>Auto-refresh mode (Polling)</span>
             </>
           )}
           {connectionStatus === 'fallback' && (
             <>
               <span className="status-indicator warning"></span>
-              <span>Using polling fallback mode</span>
+              <span>Using fallback mode (Polling)</span>
             </>
           )}
           {connectionStatus === 'error' && (
             <>
               <span className="status-indicator error"></span>
-              <span>Connection issues - retrying...</span>
+              <span>Connection issues - using fallback</span>
             </>
           )}
         </div>

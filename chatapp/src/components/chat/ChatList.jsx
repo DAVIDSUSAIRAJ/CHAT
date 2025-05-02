@@ -44,40 +44,55 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
           setOnlineStatus(statusMap);
         }
         
-        // Initialize presence channel for real-time online status
-        try {
-          const presenceChannel = await createRealtimeChannel('online-users', {
-            config: {
-              presence: {
-                key: currentUser.id,
+        // Set user's own status to online
+        await supabase
+          .from('users')
+          .update({ 
+            status: 'online',
+            last_seen: new Date().toISOString()
+          })
+          .eq('id', currentUser.id);
+        
+        // In production, use polling for statuses instead of WebSockets
+        let statusPollingCleanup = null;
+        if (process.env.NODE_ENV === 'production') {
+          statusPollingCleanup = await setupUserStatusPolling(currentUser);
+        } else {
+          // In development, use WebSockets as before
+          try {
+            const presenceChannel = await createRealtimeChannel('online-users', {
+              config: {
+                presence: {
+                  key: currentUser.id,
+                },
               },
-            },
-          });
-          
-          if (presenceChannel) {
-            presenceChannel.subscribe(async (status) => {
-              if (status === 'SUBSCRIBED') {
-                // Track current user's online status
-                await presenceChannel.track({
-                  online_at: new Date().toISOString(),
-                  user_id: currentUser.id
-                });
-                
-                // Set user as online in database
-                await supabase
-                  .from('users')
-                  .update({ 
-                    status: 'online',
-                    last_seen: new Date().toISOString()
-                  })
-                  .eq('id', currentUser.id);
-              }
             });
             
-            presenceChannelRef.current = presenceChannel;
+            if (presenceChannel) {
+              presenceChannel.subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                  // Track current user's online status
+                  await presenceChannel.track({
+                    online_at: new Date().toISOString(),
+                    user_id: currentUser.id
+                  });
+                  
+                  // Set user as online in database
+                  await supabase
+                    .from('users')
+                    .update({ 
+                      status: 'online',
+                      last_seen: new Date().toISOString()
+                    })
+                    .eq('id', currentUser.id);
+                }
+              });
+              
+              presenceChannelRef.current = presenceChannel;
+            }
+          } catch (error) {
+            console.error('Error setting up presence channel:', error);
           }
-        } catch (error) {
-          console.error('Error setting up presence channel:', error);
         }
         
         // Set up heartbeat to keep status active
@@ -224,6 +239,11 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
       
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Clean up polling if it was used
+      if (statusPollingCleanup) {
+        statusPollingCleanup();
+      }
     };
   }, []);
   
@@ -368,6 +388,60 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
     user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Add this new function to the component
+  const setupUserStatusPolling = async (currentUser) => {
+    // Polling interval for user statuses (every 5 seconds)
+    const POLL_INTERVAL = 5000;
+    
+    // Only run this in production (in dev we use WebSockets)
+    if (process.env.NODE_ENV !== 'production') return null;
+    
+    console.log("📊 Setting up user status polling");
+    
+    // Function to poll for user status updates
+    const pollUserStatuses = async () => {
+      try {
+        // Get all users
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, status, last_seen')
+          .neq('id', currentUser.id);
+          
+        if (error) {
+          console.error("Error polling user statuses:", error);
+          return;
+        }
+        
+        if (data) {
+          // Update local state with latest statuses
+          const statusMap = {};
+          data.forEach(user => {
+            statusMap[user.id] = {
+              status: user.status || 'offline',
+              lastSeen: user.last_seen
+            };
+          });
+          
+          setOnlineStatus(statusMap);
+          
+          // Also update the users list
+          setUsers(data);
+        }
+      } catch (error) {
+        console.error("Error in user status polling:", error);
+      }
+    };
+    
+    // Start polling immediately
+    pollUserStatuses();
+    
+    // Set up interval for continuous polling
+    const interval = setInterval(pollUserStatuses, POLL_INTERVAL);
+    
+    // Return function to clean up interval
+    return () => clearInterval(interval);
+  };
 
   return (
     <div className="chat-list">
