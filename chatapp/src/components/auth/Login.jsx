@@ -32,7 +32,7 @@ const handleLogin = async (e) => {
     }
 
     const { data: { session }, error1 } = await supabase.auth.getSession();
-    console.log('Session:', session);
+    console.log('Session5:', session);
 
     navigate('/chat');
   } catch (error) {

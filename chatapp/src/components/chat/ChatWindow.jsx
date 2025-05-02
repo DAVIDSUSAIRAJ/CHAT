@@ -140,21 +140,22 @@ const ChatWindow = ({
   useEffect(() => {
     if (!selectedUser || !currentUser) return;
   
+    // Unsubscribe any previous channel
     if (subscriptionRef.current) {
       subscriptionRef.current.unsubscribe();
     }
   
+    // Fetch current messages
     fetchMessages();
   
-    const setupRealtime = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-  
+    // ✅ Listen for auth state to be hydrated
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!session) {
         console.warn('No session, skipping Realtime');
         return;
       }
   
-      console.log('Session:', session); // ✅ Optional debug
+      console.log('✅ Session from onAuthStateChange:', session);
   
       const channel = supabase.channel('public:chat')
         .on(
@@ -184,16 +185,18 @@ const ChatWindow = ({
         .subscribe();
   
       subscriptionRef.current = channel;
-    };
+    });
   
-    setupRealtime();
-  
+    // ✅ Cleanup
     return () => {
+      authListener.subscription.unsubscribe();
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
       }
     };
   }, [selectedUser, currentUser]);
+  
+  
   
 
   const handleSendMessage = async (e) => {
