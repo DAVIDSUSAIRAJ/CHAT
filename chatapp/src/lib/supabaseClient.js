@@ -15,7 +15,11 @@ const options = {
   // In production, disable realtime by default since Vercel seems to have WebSocket issues
   realtime: {
     // Disable WebSockets in production by default
-    eventsPerSecond: 10
+    eventsPerSecond: 10,
+    // Completely disable WebSockets in production
+    wsEnabled: process.env.NODE_ENV !== 'production',
+    // Additional safeguard to completely disable realtime in production
+    enabled: process.env.NODE_ENV !== 'production'
   },
   global: {
     headers: { 'X-Client-Info': isProduction ? 'vercel-deployment' : 'localhost' }
@@ -185,7 +189,7 @@ export const createRealtimeChannel = async (channelName, options = {}) => {
   // Get current session
   const { data: { session } } = await supabase.auth.getSession()
   
-  // If in production or testing environment, use polling by default
+  // If in production or testing environment, or if explicitly requested, use polling
   if (isProduction || options.forcePolling) {
     console.log(`📊 Using polling for channel: ${channelName}`)
     
@@ -223,6 +227,18 @@ export const createRealtimeChannel = async (channelName, options = {}) => {
     return channel
   } catch (error) {
     console.error(`Error creating channel ${channelName}:`, error)
-    return null
+    
+    // If WebSocket creation fails, fall back to polling even in development
+    console.log(`⚠️ Falling back to polling for channel: ${channelName}`)
+    let table = channelName
+    if (channelName.includes(':')) {
+      table = channelName.split(':')[1]
+    }
+    
+    return createPollingChannel({
+      table,
+      ...options,
+      session
+    })
   }
 } 

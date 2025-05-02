@@ -5,6 +5,23 @@ import '../../styles/chat.css'; /* Voice button custom styles */
 import WaveSurferPlayer from './WaveSurferPlayer';
 import MusicPlayer from './MusicPlayer';
 
+// CRITICAL FIX: Force disable WebSockets in production
+if (process.env.NODE_ENV === 'production') {
+  // Use a monkey patch to ensure the channel method always returns null for WebSockets
+  const originalChannel = supabase.channel;
+  supabase.channel = function(...args) {
+    console.log('⚠️ WebSocket connection attempted but blocked in production');
+    // Return a dummy channel that will fail gracefully
+    return {
+      on: function() { return this; },
+      subscribe: function(callback) { 
+        if (callback) callback('CHANNEL_ERROR');
+        return this; 
+      }
+    };
+  };
+}
+
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"></circle>
@@ -143,17 +160,58 @@ const ChatWindow = ({
     let channel = null;
     let attempts = 0;
     
+    // In production, skip WebSocket attempts entirely
+    if (process.env.NODE_ENV === 'production') {
+      console.log('🔄 Production environment detected - using polling directly');
+      setConnectionStatus('connecting');
+      setConnectionType('polling');
+      
+      try {
+        channel = await createRealtimeChannel('public:chat', {
+          userId: userId,
+          targetUserId: targetUserId,
+          forcePolling: true
+        });
+        
+        if (!channel) {
+          console.error('❌ Failed to create polling channel');
+          setConnectionStatus('fallback');
+          return setupPollingFallback();
+        }
+        
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'chat'
+          },
+          onMessageReceived
+        )
+        .subscribe((status) => {
+          console.log(`Polling status: ${status}`);
+          setConnectionStatus('connected');
+        });
+        
+        console.log('✅ Polling setup successful!');
+        return channel;
+      } catch (error) {
+        console.error('❌ Error setting up polling:', error);
+        setConnectionStatus('fallback');
+        return setupPollingFallback();
+      }
+    }
+    
+    // For development environments, try WebSockets with retries
     while (attempts < maxRetries && !channel) {
       attempts++;
-      console.log(`🔄 Channel connection attempt ${attempts}/${maxRetries}`);
+      console.log(`🔄 WebSocket connection attempt ${attempts}/${maxRetries}`);
       
       try {
         // Try to create the channel with user IDs for filtering messages
         channel = await createRealtimeChannel('public:chat', {
           userId: userId,
-          targetUserId: targetUserId,
-          // Force polling in production to avoid WebSocket issues
-          forcePolling: process.env.NODE_ENV === 'production'
+          targetUserId: targetUserId
         });
         
         if (!channel) {
@@ -183,6 +241,7 @@ const ChatWindow = ({
             // Update connection status based on subscription status
             if (status === 'SUBSCRIBED') {
               setConnectionStatus('connected');
+              setConnectionType('websocket');
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
               setConnectionStatus('error');
             }
@@ -220,7 +279,32 @@ const ChatWindow = ({
       }
     }
     
+    // If we couldn't establish a WebSocket connection, use the manual polling fallback
+    if (!channel) {
+      console.log('⚠️ All WebSocket attempts failed, switching to manual polling fallback');
+      setConnectionStatus('fallback');
+      return setupPollingFallback();
+    }
+    
     return channel;
+  };
+  
+  // Simple manual polling fallback that doesn't rely on Supabase Realtime
+  const setupPollingFallback = () => {
+    console.log('🔄 Setting up manual polling fallback');
+    setConnectionType('polling-fallback');
+    
+    // Create a polling interval
+    const pollInterval = setInterval(fetchMessages, 3000);
+    
+    // Return an object that mimics a subscription with an unsubscribe method
+    return {
+      unsubscribe: () => {
+        console.log('Cleaning up polling fallback');
+        clearInterval(pollInterval);
+      },
+      isPollingFallback: true
+    };
   };
 
   useEffect(() => {

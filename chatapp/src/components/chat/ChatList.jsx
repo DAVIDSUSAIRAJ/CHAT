@@ -147,6 +147,9 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
             }
           } catch (error) {
             console.error('Error setting up presence channel:', error);
+            // If WebSockets fail in development, fall back to polling
+            const cleanup = await setupUserStatusPolling(currentUser, setOnlineStatus, setUsers);
+            statusPollingIntervalRef.current = cleanup;
           }
         }
         
