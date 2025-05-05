@@ -5,23 +5,6 @@ import '../../styles/chat.css'; /* Voice button custom styles */
 import WaveSurferPlayer from './WaveSurferPlayer';
 import MusicPlayer from './MusicPlayer';
 
-// CRITICAL FIX: Force disable WebSockets in production
-if (process.env.NODE_ENV === 'production') {
-  // Use a monkey patch to ensure the channel method always returns null for WebSockets
-  const originalChannel = supabase.channel;
-  supabase.channel = function(...args) {
-    console.log('⚠️ WebSocket connection attempted but blocked in production');
-    // Return a dummy channel that will fail gracefully
-    return {
-      on: function() { return this; },
-      subscribe: function(callback) { 
-        if (callback) callback('CHANNEL_ERROR');
-        return this; 
-      }
-    };
-  };
-}
-
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"></circle>
@@ -105,8 +88,6 @@ const ChatWindow = ({
   const videoPreviewRef = useRef(null);
   const videoStreamRef = useRef(null);
   const [isMobileDevice, setIsMobileDevice] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('connecting');
-  const [connectionType, setConnectionType] = useState('unknown');
 
   const actualSearchText = isMobileView ? externalSearchText : searchText;
   const actualSetSearchText = isMobileView ? externalSetSearchText : setSearchText;
@@ -160,25 +141,26 @@ const ChatWindow = ({
     let channel = null;
     let attempts = 0;
     
-    // In production, skip WebSocket attempts entirely
-    if (process.env.NODE_ENV === 'production') {
-      console.log('🔄 Production environment detected - using polling directly');
-      setConnectionStatus('connecting');
-      setConnectionType('polling');
+    while (attempts < maxRetries && !channel) {
+      attempts++;
       
       try {
+        // Create channel
         channel = await createRealtimeChannel('public:chat', {
           userId: userId,
-          targetUserId: targetUserId,
-          forcePolling: true
+          targetUserId: targetUserId
         });
         
         if (!channel) {
-          console.error('❌ Failed to create polling channel');
-          setConnectionStatus('fallback');
-          return setupPollingFallback();
+          if (attempts < maxRetries) {
+            // Exponential backoff
+            const delay = Math.min(1000 * Math.pow(2, attempts - 1), 5000);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          continue;
         }
         
+        // Set up subscription
         channel.on(
           'postgres_changes',
           {
@@ -188,126 +170,34 @@ const ChatWindow = ({
           },
           onMessageReceived
         )
-        .subscribe((status) => {
-          console.log(`Polling status: ${status}`);
-          setConnectionStatus('connected');
-        });
-        
-        console.log('✅ Polling setup successful!');
-        return channel;
-      } catch (error) {
-        console.error('❌ Error setting up polling:', error);
-        setConnectionStatus('fallback');
-        return setupPollingFallback();
-      }
-    }
-    
-    // For development environments, try WebSockets with retries
-    while (attempts < maxRetries && !channel) {
-      attempts++;
-      console.log(`🔄 WebSocket connection attempt ${attempts}/${maxRetries}`);
-      
-      try {
-        // Try to create the channel with user IDs for filtering messages
-        channel = await createRealtimeChannel('public:chat', {
-          userId: userId,
-          targetUserId: targetUserId
-        });
-        
-        if (!channel) {
-          if (attempts < maxRetries) {
-            // Wait longer with each retry
-            const delay = 1000 * attempts;
-            console.log(`⏳ Waiting ${delay}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-          continue;
-        }
-        
-        // Try to set up the subscription
-        try {
-          channel.on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'chat'
-            },
-            onMessageReceived
-          )
-          .subscribe((status) => {
-            console.log(`Realtime subscription status: ${status}`);
-            
-            // Update connection status based on subscription status
-            if (status === 'SUBSCRIBED') {
-              setConnectionStatus('connected');
-              setConnectionType('websocket');
-            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-              setConnectionStatus('error');
-            }
-          });
-        } catch (subscribeError) {
-          console.error('❌ Error subscribing to channel:', subscribeError);
-          // If we can't subscribe, clean up and try again
-          if (channel.unsubscribe) {
-            try {
-              channel.unsubscribe();
-            } catch (e) {}
-          }
-          channel = null;
-          
-          if (attempts < maxRetries) {
-            const delay = 1000 * attempts;
-            await new Promise(resolve => setTimeout(resolve, delay));
-            continue;
-          }
-        }
-        
-        // If we got this far, we have a working channel
-        if (channel) {
-          console.log('✅ Channel setup successful!');
-        }
+        .subscribe();
         
       } catch (error) {
-        console.error('❌ Error in channel setup:', error);
         channel = null;
         
         if (attempts < maxRetries) {
-          const delay = 1000 * attempts;
+          // Exponential backoff
+          const delay = Math.min(1000 * Math.pow(2, attempts - 1), 5000);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
     
-    // If we couldn't establish a WebSocket connection, use the manual polling fallback
+    // If all connection attempts fail, fall back to polling
     if (!channel) {
-      console.log('⚠️ All WebSocket attempts failed, switching to manual polling fallback');
-      setConnectionStatus('fallback');
-      return setupPollingFallback();
+      const pollInterval = setInterval(fetchMessages, 3000);
+      
+      return {
+        unsubscribe: () => {
+          clearInterval(pollInterval);
+        }
+      };
     }
     
     return channel;
   };
-  
-  // Simple manual polling fallback that doesn't rely on Supabase Realtime
-  const setupPollingFallback = () => {
-    console.log('🔄 Setting up manual polling fallback');
-    setConnectionType('polling-fallback');
-    
-    // Create a polling interval
-    const pollInterval = setInterval(fetchMessages, 3000);
-    
-    // Return an object that mimics a subscription with an unsubscribe method
-    return {
-      unsubscribe: () => {
-        console.log('Cleaning up polling fallback');
-        clearInterval(pollInterval);
-      },
-      isPollingFallback: true
-    };
-  };
 
-  // Add this helper function at the top level of the component
+  // Safe unsubscribe helper
   const safeUnsubscribe = (subscription) => {
     if (!subscription) return;
     
@@ -316,7 +206,7 @@ const ChatWindow = ({
         subscription.unsubscribe();
       }
     } catch (error) {
-      console.log('Safely handled unsubscribe error:', error.message);
+      // Silently handle unsubscribe errors
     }
   };
 
@@ -354,7 +244,6 @@ const ChatWindow = ({
 
     // Use the improved retry mechanism
     const setup = async () => {
-      setConnectionStatus('connecting');
       const channel = await setupChannelWithRetry(
         currentUser.id,
         selectedUser.id,
@@ -363,28 +252,15 @@ const ChatWindow = ({
       
       if (channel && isMounted) {
         subscriptionRef.current = channel;
-        
-        // Detect if we're using polling or WebSockets
-        if (process.env.NODE_ENV === 'production') {
-          setConnectionType('polling');
-        } else {
-          setConnectionType('websocket');
-        }
       } else if (isMounted) {
-        console.error('❌ Failed to establish realtime channel after retries');
-        // Set connection status to fallback
-        setConnectionStatus('fallback');
-        setConnectionType('polling-fallback');
-        
-        // Create a simple polling fallback that doesn't rely on Supabase Realtime
+        // Create a simple polling fallback
         const pollMessages = async () => {
           if (!isMounted) return;
           
           try {
-            console.log('🔄 Polling for messages as fallback');
             await fetchMessages();
           } catch (error) {
-            console.error('Error in fallback polling:', error);
+            // Silently handle errors
           }
           
           if (isMounted) {
@@ -399,7 +275,6 @@ const ChatWindow = ({
         // Store cleanup function
         subscriptionRef.current = {
           unsubscribe: () => { 
-            console.log('Cleaning up polling fallback');
             isMounted = false; 
           },
           isPollingFallback: true
@@ -412,7 +287,6 @@ const ChatWindow = ({
 
     // Cleanup
     return () => {
-      console.log(`Cleaning up subscription for user ${selectedUser.id}`);
       isMounted = false;
       
       // Use our safe unsubscribe helper
@@ -1349,42 +1223,6 @@ const ChatWindow = ({
               />
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Add connection status indicator */}
-      {process.env.NODE_ENV === 'production' && (
-        <div className={`connection-status ${connectionStatus}`}>
-          {connectionStatus === 'connecting' && (
-            <>
-              <span className="status-indicator pulsing"></span>
-              <span>Connecting...</span>
-            </>
-          )}
-          {connectionStatus === 'connected' && connectionType === 'websocket' && (
-            <>
-              <span className="status-indicator"></span>
-              <span>Real-time connected (WebSocket)</span>
-            </>
-          )}
-          {connectionStatus === 'connected' && connectionType === 'polling' && (
-            <>
-              <span className="status-indicator"></span>
-              <span>Auto-refresh mode (Polling)</span>
-            </>
-          )}
-          {connectionStatus === 'fallback' && (
-            <>
-              <span className="status-indicator warning"></span>
-              <span>Using fallback mode (Polling)</span>
-            </>
-          )}
-          {connectionStatus === 'error' && (
-            <>
-              <span className="status-indicator error"></span>
-              <span>Connection issues - using fallback</span>
-            </>
-          )}
         </div>
       )}
 
