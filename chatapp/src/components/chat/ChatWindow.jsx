@@ -1311,16 +1311,17 @@ const ChatWindow = ({
     if (localStream) {
       const audioTracks = localStream.getAudioTracks();
       if (audioTracks.length > 0) {
-        const enabled = !isMicMuted;
-        audioTracks[0].enabled = enabled;
-        setIsMicMuted(!enabled);
+        // Set the mute state directly based on the current state
+        audioTracks[0].enabled = isMicMuted;
+        setIsMicMuted(!isMicMuted);
       }
     }
   };
 
   const toggleSpeaker = () => {
     if (remoteAudioRef.current) {
-      remoteAudioRef.current.muted = isSpeakerOn;
+      // Set the muted property directly to the opposite of current speaker state
+      remoteAudioRef.current.muted = !isSpeakerOn;
       setIsSpeakerOn(!isSpeakerOn);
     }
   };
