@@ -1301,9 +1301,18 @@ const ChatWindow = ({
   };
 
   const startCallTimer = () => {
+    // Clear any existing timer before starting a new one
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+
     setCallTimer(0);
     callTimerRef.current = setInterval(() => {
-      setCallTimer((prev) => prev + 1);
+      setCallTimer(prev => {
+        const newValue = prev + 1;
+        return newValue;
+      });
     }, 1000);
   };
 
@@ -1329,9 +1338,10 @@ const ChatWindow = ({
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs
+    const formattedTime = `${mins.toString().padStart(2, "0")}:${secs
       .toString()
       .padStart(2, "0")}`;
+    return formattedTime;
   };
 
   useEffect(() => {
