@@ -1190,6 +1190,11 @@ const ChatWindow = ({
     try {
       debugLog('PeerConnection', 'Creating new connection');
       const pc = new RTCPeerConnection(servers);
+      console.log(pc,"pcConnetion")
+      
+      // Buffer for ICE candidates received before remote description is set
+      const iceCandidatesBuffer = [];
+      let hasRemoteDescription = false;
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -1205,6 +1210,74 @@ const ChatWindow = ({
 
       pc.oniceconnectionstatechange = () => {
         debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
+        switch(pc.iceConnectionState) {
+          case 'checking':
+            debugLog('ICE', 'Connecting...');
+            break;
+          case 'connected':
+            debugLog('ICE', 'Connected');
+            break;
+          case 'failed':
+            debugLog('ICE', 'Connection failed - attempting restart');
+            pc.restartIce();
+            break;
+          case 'disconnected':
+            debugLog('ICE', 'Disconnected - checking connection');
+            // Attempt to recover from disconnected state
+            setTimeout(() => {
+              if (pc.iceConnectionState === 'disconnected') {
+                pc.restartIce();
+              }
+            }, 3000);
+            break;
+        }
+      };
+
+      // Add method to handle buffered candidates
+      pc.addBufferedCandidates = async () => {
+        if (!hasRemoteDescription) return;
+        
+        debugLog('ICE', `Processing ${iceCandidatesBuffer.length} buffered candidates`);
+        while (iceCandidatesBuffer.length > 0) {
+          const candidate = iceCandidatesBuffer.shift();
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            debugLog('ICE', 'Successfully added buffered candidate');
+          } catch (error) {
+            debugLog('ICE', 'Error adding buffered candidate', error);
+          }
+        }
+      };
+
+      // Add method to handle new ICE candidates
+      pc.handleIceCandidate = async (candidate) => {
+        try {
+          if (!hasRemoteDescription) {
+            debugLog('ICE', 'Buffering ICE candidate until remote description is set');
+            iceCandidatesBuffer.push(candidate);
+            return;
+          }
+
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          debugLog('ICE', 'Successfully added ICE candidate');
+        } catch (error) {
+          debugLog('ICE', 'Error adding ICE candidate', error);
+          // If we get an error, buffer the candidate for retry
+          iceCandidatesBuffer.push(candidate);
+        }
+      };
+
+      // Add method to set remote description
+      pc.setRemoteDescriptionAsync = async (description) => {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(description));
+          hasRemoteDescription = true;
+          debugLog('PeerConnection', 'Remote description set successfully');
+          await pc.addBufferedCandidates();
+        } catch (error) {
+          debugLog('PeerConnection', 'Error setting remote description', error);
+          throw error;
+        }
       };
 
       pc.ontrack = (event) => {
@@ -1524,8 +1597,13 @@ const ChatWindow = ({
       if (!hasAudio) {
         throw new Error("No microphone found");
       }
+
+      // If video is requested but not available, we'll fall back to audio
+      let shouldUseVideo = call.isVideoCall && hasVideo;
       if (call.isVideoCall && !hasVideo) {
-        throw new Error("No camera found");
+        debugLog('Media', 'Video device not available, falling back to audio only');
+        toast.info("Camera not available. Continuing with audio only.");
+        setIsVideoCall(false);
       }
 
       const constraints = {
@@ -1534,7 +1612,7 @@ const ChatWindow = ({
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: call.isVideoCall ? {
+        video: shouldUseVideo ? {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           facingMode: 'user'
@@ -1564,6 +1642,15 @@ const ChatWindow = ({
         } catch (err) {
           lastError = err;
           retries--;
+          
+          // If we failed with video, try falling back to audio-only
+          if (shouldUseVideo && retries > 0) {
+            debugLog('Media', 'Failed with video, trying audio-only fallback');
+            shouldUseVideo = false;
+            constraints.video = false;
+            setIsVideoCall(false);
+            continue;
+          }
           
           // Provide specific error messages
           let errorMessage = "Failed to access media devices";
@@ -1597,7 +1684,7 @@ const ChatWindow = ({
       checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
 
-      if (call.isVideoCall && localVideoRef.current) {
+      if (shouldUseVideo && localVideoRef.current) {
         debugLog('Video', 'Setting up local video preview');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
@@ -1615,7 +1702,7 @@ const ChatWindow = ({
       });
 
       debugLog('PeerConnection', 'Setting remote description from offer');
-      await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
+      await pc.setRemoteDescriptionAsync(new RTCSessionDescription(call.offer));
       
       debugLog('PeerConnection', 'Creating answer');
       const answer = await pc.createAnswer();
@@ -1627,7 +1714,7 @@ const ChatWindow = ({
         answer: pc.localDescription,
         from: currentUser.id,
         to: call.from,
-        isVideoCall: call.isVideoCall
+        isVideoCall: shouldUseVideo
       });
 
       setCallState("connected");
@@ -1733,25 +1820,21 @@ const ChatWindow = ({
         case "answer":
           if (callState === "outgoing" && peerConnectionRef.current) {
             peerConnectionRef.current
-              .setRemoteDescription(new RTCSessionDescription(signal.answer))
+              .setRemoteDescriptionAsync(signal.answer)
               .then(() => {
                 setCallState("connected");
                 startCallTimer();
                 toast.success(`Call connected with ${selectedUser.username}`);
               })
               .catch((error) => {
-                console.error("Error setting remote description:", error);
+                debugLog('Call', 'Error setting remote description', error);
                 endCall();
               });
           }
           break;
         case "ice-candidate":
           if (peerConnectionRef.current) {
-            peerConnectionRef.current
-              .addIceCandidate(new RTCIceCandidate(signal.candidate))
-              .catch((error) =>
-                console.error("Error adding ICE candidate:", error)
-              );
+            peerConnectionRef.current.handleIceCandidate(signal.candidate);
           }
           break;
         case "reject":
