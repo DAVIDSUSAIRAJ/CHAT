@@ -1418,25 +1418,47 @@ const ChatWindow = ({
   const cleanupCall = async () => {
     debugLog('Cleanup', 'Starting call cleanup');
     
-    // Stop and cleanup local stream
-    if (localStream) {
-      debugLog('Cleanup', 'Stopping local stream tracks');
-      localStream.getTracks().forEach((track) => {
-        track.stop();
-        track.enabled = false;
-      });
-      setLocalStream(null);
+    // Force stop any existing MediaStreamTracks
+    try {
+      const allTracks = [];
+      
+      // Get all tracks from local stream
+      if (localStream) {
+        debugLog('Cleanup', 'Stopping local stream tracks');
+        allTracks.push(...localStream.getTracks());
+      }
+      
+      // Get all tracks from remote stream
+      if (remoteStream) {
+        debugLog('Cleanup', 'Stopping remote stream tracks');
+        allTracks.push(...remoteStream.getTracks());
+      }
+      
+      // Get any other active tracks that might be hanging
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      for (const device of devices) {
+        if (device.label) { // If we have a label, the device is active
+          debugLog('Cleanup', `Found active device: ${device.kind} - ${device.label}`);
+        }
+      }
+
+      // Stop all tracks
+      for (const track of allTracks) {
+        try {
+          track.enabled = false;
+          track.stop();
+          debugLog('Cleanup', `Stopped track: ${track.kind}`);
+        } catch (err) {
+          debugLog('Cleanup', `Error stopping track: ${track.kind}`, err);
+        }
+      }
+    } catch (err) {
+      debugLog('Cleanup', 'Error during track cleanup', err);
     }
 
-    // Stop and cleanup remote stream
-    if (remoteStream) {
-      debugLog('Cleanup', 'Stopping remote stream tracks');
-      remoteStream.getTracks().forEach((track) => {
-        track.stop();
-        track.enabled = false;
-      });
-      setRemoteStream(null);
-    }
+    // Clear stream references
+    setLocalStream(null);
+    setRemoteStream(null);
 
     // Close and cleanup peer connection
     if (peerConnectionRef.current) {
@@ -1482,8 +1504,8 @@ const ChatWindow = ({
       callTimerRef.current = null;
     }
 
-    // Force a small delay to ensure everything is cleaned up
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Force a garbage collection delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
     debugLog('Cleanup', 'Call cleanup completed');
   };
 
@@ -1491,7 +1513,7 @@ const ChatWindow = ({
     try {
       debugLog('Call', 'Starting call acceptance');
       
-      // Clean up any existing call state
+      // Ensure thorough cleanup first
       await cleanupCall();
       
       setIsVideoCall(call.isVideoCall);
@@ -1521,23 +1543,54 @@ const ChatWindow = ({
 
       debugLog('Media', 'Requesting media with constraints', constraints);
       
-      // Add retry logic for getting user media
+      // Enhanced retry logic for getting user media
       let stream;
       let retries = 3;
+      let lastError;
+      
       while (retries > 0) {
         try {
+          // Force release any potentially held devices
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          for (const device of devices) {
+            if (device.label) {
+              debugLog('Media', `Found active device before retry: ${device.kind} - ${device.label}`);
+            }
+          }
+
           stream = await navigator.mediaDevices.getUserMedia(constraints);
+          debugLog('Media', 'Successfully acquired media stream');
           break;
         } catch (err) {
+          lastError = err;
           retries--;
-          if (retries === 0) throw err;
-          debugLog('Media', `Failed to get media, retrying... (${retries} attempts left)`, err);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Provide specific error messages
+          let errorMessage = "Failed to access media devices";
+          if (err.name === "NotReadableError" || err.name === "AbortError") {
+            errorMessage = "Device is busy or in use by another application. Please close other apps using your camera/microphone.";
+          } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+            errorMessage = "Permission to use camera/microphone was denied. Please check your browser permissions.";
+          } else if (err.name === "NotFoundError") {
+            errorMessage = "No camera/microphone found. Please check your device connections.";
+          }
+          
+          debugLog('Media', `${errorMessage} (${retries} attempts left)`, err);
+          
+          if (retries === 0) {
+            throw new Error(errorMessage);
+          }
+          
+          // Longer delay between retries
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Try to force cleanup between attempts
+          await cleanupCall();
         }
       }
 
       if (!stream) {
-        throw new Error("Failed to get media stream after retries");
+        throw lastError || new Error("Failed to get media stream after retries");
       }
 
       debugLog('Media', 'Got local stream');
