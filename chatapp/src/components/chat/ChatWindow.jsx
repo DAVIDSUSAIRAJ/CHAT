@@ -1286,22 +1286,24 @@ const ChatWindow = ({
       // Check available devices first
       const { hasAudio, hasVideo } = await checkMediaDevices();
       if (!hasAudio) {
-        toast.error("No microphone found. Please check your audio device.");
-        return;
+        throw new Error("No microphone found. Please check your audio device.");
       }
       if (withVideo && !hasVideo) {
-        toast.error("No camera found. Please check your video device.");
-        return;
+        throw new Error("No camera found. Please check your video device.");
       }
 
-      cleanupCall();
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Clean up any existing call state
+      await cleanupCall();
 
       setIsVideoCall(withVideo);
       setCallState("outgoing");
       
       const constraints = {
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
         video: withVideo ? {
           width: { ideal: 1280 },
           height: { ideal: 720 },
@@ -1310,10 +1312,28 @@ const ChatWindow = ({
       };
 
       debugLog('Media', 'Requesting media with constraints', constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Add retry logic for getting user media
+      let stream;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (err) {
+          retries--;
+          if (retries === 0) throw err;
+          debugLog('Media', `Failed to get media, retrying... (${retries} attempts left)`, err);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      if (!stream) {
+        throw new Error("Failed to get media stream after retries");
+      }
+
       debugLog('Media', 'Got local stream');
       checkStreamTracks(stream, 'Local Stream');
-      
       setLocalStream(stream);
 
       if (withVideo && localVideoRef.current) {
@@ -1327,7 +1347,9 @@ const ChatWindow = ({
       }
 
       const pc = await createPeerConnection();
-      if (!pc) return;
+      if (!pc) {
+        throw new Error("Failed to create peer connection");
+      }
 
       stream.getTracks().forEach(track => {
         debugLog('PeerConnection', `Adding ${track.kind} track`);
@@ -1351,7 +1373,7 @@ const ChatWindow = ({
     } catch (error) {
       debugLog('Call', 'Error in startCall', error);
       toast.error(`Failed to start call: ${error.message}`);
-      cleanupCall();
+      await cleanupCall();
     }
   };
 
@@ -1393,16 +1415,103 @@ const ChatWindow = ({
     );
   };
 
+  const cleanupCall = async () => {
+    debugLog('Cleanup', 'Starting call cleanup');
+    
+    // Stop and cleanup local stream
+    if (localStream) {
+      debugLog('Cleanup', 'Stopping local stream tracks');
+      localStream.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
+      setLocalStream(null);
+    }
+
+    // Stop and cleanup remote stream
+    if (remoteStream) {
+      debugLog('Cleanup', 'Stopping remote stream tracks');
+      remoteStream.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
+      setRemoteStream(null);
+    }
+
+    // Close and cleanup peer connection
+    if (peerConnectionRef.current) {
+      debugLog('Cleanup', 'Closing peer connection');
+      try {
+        peerConnectionRef.current.close();
+      } catch (err) {
+        debugLog('Cleanup', 'Error closing peer connection', err);
+      }
+      peerConnectionRef.current = null;
+      setPeerConnection(null);
+    }
+
+    // Clear all video/audio elements
+    if (localAudioRef.current) {
+      debugLog('Cleanup', 'Clearing local audio');
+      localAudioRef.current.srcObject = null;
+    }
+    if (remoteAudioRef.current) {
+      debugLog('Cleanup', 'Clearing remote audio');
+      remoteAudioRef.current.srcObject = null;
+    }
+    if (localVideoRef.current) {
+      debugLog('Cleanup', 'Clearing local video');
+      localVideoRef.current.srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      debugLog('Cleanup', 'Clearing remote video');
+      remoteVideoRef.current.srcObject = null;
+    }
+
+    // Reset all state
+    setCallState("idle");
+    setCallTimer(0);
+    setIncomingCall(null);
+    setIsMicMuted(false);
+    setIsSpeakerOn(true);
+    setIsVideoCall(false);
+    setIsCameraOn(true);
+
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+
+    // Force a small delay to ensure everything is cleaned up
+    await new Promise(resolve => setTimeout(resolve, 500));
+    debugLog('Cleanup', 'Call cleanup completed');
+  };
+
   const acceptCall = async (call) => {
     try {
-      cleanupCall();
-      await new Promise(resolve => setTimeout(resolve, 500));
-
+      debugLog('Call', 'Starting call acceptance');
+      
+      // Clean up any existing call state
+      await cleanupCall();
+      
       setIsVideoCall(call.isVideoCall);
-      console.log("Accepting call with video:", call.isVideoCall);
+      debugLog('Call', 'Accepting call with video:', call.isVideoCall);
+
+      // Check device availability first
+      const { hasAudio, hasVideo } = await checkMediaDevices();
+      if (!hasAudio) {
+        throw new Error("No microphone found");
+      }
+      if (call.isVideoCall && !hasVideo) {
+        throw new Error("No camera found");
+      }
 
       const constraints = {
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
         video: call.isVideoCall ? {
           width: { ideal: 1280 },
           height: { ideal: 720 },
@@ -1410,17 +1519,37 @@ const ChatWindow = ({
         } : false
       };
 
-      console.log("Getting user media with constraints:", constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Got local stream tracks:", stream.getTracks().map(t => t.kind));
+      debugLog('Media', 'Requesting media with constraints', constraints);
+      
+      // Add retry logic for getting user media
+      let stream;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (err) {
+          retries--;
+          if (retries === 0) throw err;
+          debugLog('Media', `Failed to get media, retrying... (${retries} attempts left)`, err);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      if (!stream) {
+        throw new Error("Failed to get media stream after retries");
+      }
+
+      debugLog('Media', 'Got local stream');
+      checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
 
       if (call.isVideoCall && localVideoRef.current) {
-        console.log("Setting up local video preview");
+        debugLog('Video', 'Setting up local video preview');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         await localVideoRef.current.play().catch(err => {
-          console.error("Error playing local video:", err);
+          debugLog('Video', 'Error playing local video', err);
         });
       }
 
@@ -1428,16 +1557,16 @@ const ChatWindow = ({
       if (!pc) throw new Error("Failed to create peer connection");
 
       stream.getTracks().forEach(track => {
-        console.log("Adding track to peer connection:", track.kind);
+        debugLog('PeerConnection', `Adding ${track.kind} track`);
         pc.addTrack(track, stream);
       });
 
-      console.log("Setting remote description from offer");
+      debugLog('PeerConnection', 'Setting remote description from offer');
       await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
       
-      console.log("Creating answer");
+      debugLog('PeerConnection', 'Creating answer');
       const answer = await pc.createAnswer();
-      console.log("Setting local description");
+      debugLog('PeerConnection', 'Setting local description');
       await pc.setLocalDescription(answer);
 
       sendSignalingMessage({
@@ -1453,9 +1582,9 @@ const ChatWindow = ({
       toast.dismiss();
       toast.success(`Call connected with ${selectedUser.username}`);
     } catch (error) {
-      console.error("Error in acceptCall:", error);
-      toast.error("Failed to accept call. Please check your device permissions.");
-      cleanupCall();
+      debugLog('Call', 'Error in acceptCall', error);
+      toast.error(`Failed to accept call: ${error.message}`);
+      await cleanupCall();
     }
   };
 
@@ -1480,51 +1609,6 @@ const ChatWindow = ({
     });
 
     cleanupCall();
-  };
-
-  const cleanupCall = () => {
-    // Stop all tracks in local stream
-    if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        track.stop();
-        track.enabled = false;
-      });
-      setLocalStream(null);
-    }
-
-    // Close peer connection
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-      setPeerConnection(null);
-    }
-
-    if (localAudioRef.current) {
-      localAudioRef.current.srcObject = null;
-    }
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = null;
-    }
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
-    }
-
-    setRemoteStream(null);
-    setCallState("idle");
-    setCallTimer(0);
-    setIncomingCall(null);
-    setIsMicMuted(false);
-    setIsSpeakerOn(true);
-    setIsVideoCall(false);
-    setIsCameraOn(true);
-
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      callTimerRef.current = null;
-    }
   };
 
   const startCallTimer = () => {
