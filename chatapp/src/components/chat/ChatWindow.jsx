@@ -85,6 +85,75 @@ const VideoCallIcon = () => (
   </svg>
 );
 
+const MicIcon = ({ muted }) => (
+  <svg 
+    width="20" 
+    height="20" 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2"
+    strokeLinecap="round" 
+    strokeLinejoin="round"
+  >
+    {muted ? (
+      <>
+        <line x1="1" y1="1" x2="23" y2="23" />
+        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+        <line x1="12" y1="19" x2="12" y2="23" />
+        <line x1="8" y1="23" x2="16" y2="23" />
+      </>
+    ) : (
+      <>
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+        <line x1="12" y1="19" x2="12" y2="23" />
+        <line x1="8" y1="23" x2="16" y2="23" />
+      </>
+    )}
+  </svg>
+);
+
+const CameraIcon = ({ enabled }) => (
+  <svg 
+    width="20" 
+    height="20" 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2"
+    strokeLinecap="round" 
+    strokeLinejoin="round"
+  >
+    {enabled ? (
+      <>
+        <path d="M23 7l-7 5 7 5V7z" />
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+      </>
+    ) : (
+      <>
+        <path d="M1 1l22 22M21 21H7a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z" />
+      </>
+    )}
+  </svg>
+);
+
+const EndCallIcon = () => (
+  <svg 
+    width="20" 
+    height="20" 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2"
+    strokeLinecap="round" 
+    strokeLinejoin="round"
+  >
+    <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.79 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
+  </svg>
+);
+
 const ChatWindow = ({
   selectedUser,
   hideHeader,
@@ -1072,9 +1141,11 @@ const ChatWindow = ({
   const createPeerConnection = async () => {
     try {
       const pc = new RTCPeerConnection(servers);
+      console.log("Created peer connection");
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
+          console.log("Sending ICE candidate");
           sendSignalingMessage({
             type: "ice-candidate",
             candidate: event.candidate,
@@ -1084,7 +1155,30 @@ const ChatWindow = ({
         }
       };
 
-      pc.onconnectionstatechange = (event) => {
+      pc.ontrack = (event) => {
+        console.log("Received remote track:", event.track.kind);
+        if (event.streams && event.streams[0]) {
+          const remoteMediaStream = event.streams[0];
+          console.log("Setting remote stream");
+          setRemoteStream(remoteMediaStream);
+
+          // Handle both audio and video
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = remoteMediaStream;
+          }
+
+          if (remoteVideoRef.current && isVideoCall) {
+            console.log("Setting remote video source");
+            remoteVideoRef.current.srcObject = remoteMediaStream;
+            remoteVideoRef.current.play().catch(err => {
+              console.error("Error playing remote video:", err);
+            });
+          }
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log("Connection state changed:", pc.connectionState);
         switch (pc.connectionState) {
           case "connected":
             console.log("WebRTC connection established");
@@ -1094,38 +1188,13 @@ const ChatWindow = ({
           case "disconnected":
           case "failed":
             console.log("WebRTC connection failed or disconnected");
+            toast.error("Call connection lost");
             endCall();
             break;
           case "closed":
             console.log("WebRTC connection closed");
             endCall();
             break;
-        }
-      };
-
-      pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
-          
-          // Ensure both audio and video are connected
-          if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = event.streams[0];
-          }
-          
-          // Fix for video handling - make sure to attach stream directly
-          if (isVideoCall && remoteVideoRef.current) {
-            console.log("Setting remote video stream");
-            remoteVideoRef.current.srcObject = event.streams[0];
-            
-            // Force a repaint to ensure video appears
-            setTimeout(() => {
-              if (remoteVideoRef.current) {
-                remoteVideoRef.current.play().catch(err => 
-                  console.error("Error playing remote video:", err)
-                );
-              }
-            }, 100);
-          }
         }
       };
 
@@ -1153,51 +1222,47 @@ const ChatWindow = ({
 
   const startCall = async (withVideo = false) => {
     try {
+      cleanupCall();
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       setIsVideoCall(withVideo);
-      const mediaConstraints = {
-        audio: true,
-        video: withVideo ? { 
-          width: { ideal: 1280 },
-          height: { ideal: 720 } 
-        } : false,
-      };
-      
+      setCallState("outgoing");
+
       console.log("Starting call with video:", withVideo);
-      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      const constraints = {
+        audio: true,
+        video: withVideo ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        } : false
+      };
+
+      console.log("Getting user media with constraints:", constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Got local stream tracks:", stream.getTracks().map(t => t.kind));
       setLocalStream(stream);
 
-      if (localAudioRef.current) {
-        localAudioRef.current.srcObject = stream;
-      }
-      
       if (withVideo && localVideoRef.current) {
-        console.log("Setting local video stream");
+        console.log("Setting up local video preview");
         localVideoRef.current.srcObject = stream;
-        
-        // Force a repaint to ensure video appears
-        setTimeout(() => {
-          if (localVideoRef.current) {
-            localVideoRef.current.play().catch(err => 
-              console.error("Error playing local video:", err)
-            );
-          }
-        }, 100);
+        localVideoRef.current.muted = true;
+        await localVideoRef.current.play().catch(err => {
+          console.error("Error playing local video:", err);
+        });
       }
 
       const pc = await createPeerConnection();
       if (!pc) return;
 
-      // Add tracks to peer connection
-      stream.getTracks().forEach((track) => {
+      stream.getTracks().forEach(track => {
         console.log("Adding track to peer connection:", track.kind);
         pc.addTrack(track, stream);
       });
 
-      // Log tracks for debugging
-      const senders = pc.getSenders();
-      console.log("Peer connection senders:", senders.map(s => s.track?.kind));
-
+      console.log("Creating offer");
       const offer = await pc.createOffer();
+      console.log("Setting local description");
       await pc.setLocalDescription(offer);
 
       sendSignalingMessage({
@@ -1208,15 +1273,11 @@ const ChatWindow = ({
         isVideoCall: withVideo,
       });
 
-      setCallState("outgoing");
       toast.info(`${withVideo ? 'Video' : 'Audio'} calling ${selectedUser.username}...`);
     } catch (error) {
-      console.error(`Error starting ${isVideoCall ? 'video' : 'audio'} call:`, error);
-      toast.error(
-        `Failed to start call. Please check your ${isVideoCall ? 'camera and microphone' : 'microphone'} permissions.`
-      );
-      setCallState("idle");
-      setIsVideoCall(false);
+      console.error("Error in startCall:", error);
+      toast.error("Failed to start call. Please check your device permissions.");
+      cleanupCall();
     }
   };
 
@@ -1260,33 +1321,49 @@ const ChatWindow = ({
 
   const acceptCall = async (call) => {
     try {
-      setIsVideoCall(call.isVideoCall || false);
-      const mediaConstraints = {
+      cleanupCall();
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      setIsVideoCall(call.isVideoCall);
+      console.log("Accepting call with video:", call.isVideoCall);
+
+      const constraints = {
         audio: true,
-        video: call.isVideoCall || false,
+        video: call.isVideoCall ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        } : false
       };
-      
-      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+
+      console.log("Getting user media with constraints:", constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Got local stream tracks:", stream.getTracks().map(t => t.kind));
       setLocalStream(stream);
 
-      if (localAudioRef.current) {
-        localAudioRef.current.srcObject = stream;
-      }
-      
       if (call.isVideoCall && localVideoRef.current) {
+        console.log("Setting up local video preview");
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.muted = true;
+        await localVideoRef.current.play().catch(err => {
+          console.error("Error playing local video:", err);
+        });
       }
 
       const pc = await createPeerConnection();
-      if (!pc) return;
+      if (!pc) throw new Error("Failed to create peer connection");
 
-      stream.getTracks().forEach((track) => {
+      stream.getTracks().forEach(track => {
+        console.log("Adding track to peer connection:", track.kind);
         pc.addTrack(track, stream);
       });
 
+      console.log("Setting remote description from offer");
       await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
-
+      
+      console.log("Creating answer");
       const answer = await pc.createAnswer();
+      console.log("Setting local description");
       await pc.setLocalDescription(answer);
 
       sendSignalingMessage({
@@ -1294,19 +1371,17 @@ const ChatWindow = ({
         answer: pc.localDescription,
         from: currentUser.id,
         to: call.from,
-        isVideoCall: call.isVideoCall || false,
+        isVideoCall: call.isVideoCall
       });
 
       setCallState("connected");
       startCallTimer();
       toast.dismiss();
-      toast.success(`${call.isVideoCall ? 'Video' : 'Audio'} call connected with ${selectedUser.username}`);
+      toast.success(`Call connected with ${selectedUser.username}`);
     } catch (error) {
-      console.error(`Error accepting ${call.isVideoCall ? 'video' : 'audio'} call:`, error);
-      toast.error(
-        `Failed to accept call. Please check your ${call.isVideoCall ? 'camera and microphone' : 'microphone'} permissions.`
-      );
-      rejectCall();
+      console.error("Error in acceptCall:", error);
+      toast.error("Failed to accept call. Please check your device permissions.");
+      cleanupCall();
     }
   };
 
@@ -1334,11 +1409,16 @@ const ChatWindow = ({
   };
 
   const cleanupCall = () => {
+    // Stop all tracks in local stream
     if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
+      localStream.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
       setLocalStream(null);
     }
 
+    // Close peer connection
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -1642,8 +1722,8 @@ const ChatWindow = ({
             >
               {isMicMuted ? (
                 <svg
-                  width="24"
-                  height="24"
+                  width="20"
+                  height="20"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1651,16 +1731,16 @@ const ChatWindow = ({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                  <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                  <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                  <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                  <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               ) : (
                 <svg
-                  width="24"
-                  height="24"
+                  width="20"
+                  height="20"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1668,10 +1748,10 @@ const ChatWindow = ({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               )}
             </button>
@@ -1681,8 +1761,8 @@ const ChatWindow = ({
               title="End Call"
             >
               <svg
-                width="24"
-                height="24"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -1690,7 +1770,7 @@ const ChatWindow = ({
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.79 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path>
+                <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.79 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path>
                 <line x1="23" y1="1" x2="1" y2="23"></line>
               </svg>
             </button>
@@ -1701,8 +1781,8 @@ const ChatWindow = ({
             >
               {isSpeakerOn ? (
                 <svg
-                  width="24"
-                  height="24"
+                  width="20"
+                  height="20"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1715,8 +1795,8 @@ const ChatWindow = ({
                 </svg>
               ) : (
                 <svg
-                  width="24"
-                  height="24"
+                  width="20"
+                  height="20"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1789,8 +1869,243 @@ const ChatWindow = ({
         style={{ display: "none" }}
       ></audio>
       <audio ref={remoteAudioRef} autoPlay style={{ display: "none" }}></audio>
-      <video ref={localVideoRef} autoPlay muted playsInline style={{ display: "none" }} />
-      <video ref={remoteVideoRef} autoPlay playsInline style={{ display: "none" }} />
+      {/* Video call container */}
+      {isVideoCall && callState !== "idle" && (
+        <div className="video-call-container" style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "#000",
+          zIndex: 9999,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden"
+        }}>
+          {/* Remote video - Main display */}
+          <div style={{ 
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#1a1a1a"
+          }}>
+            {remoteStream && callState === "connected" ? (
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain"
+                }}
+              />
+            ) : (
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#fff"
+              }}>
+                <div style={{
+                  width: "120px",
+                  height: "120px",
+                  borderRadius: "50%",
+                  backgroundColor: "#333",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "48px",
+                  marginBottom: "24px",
+                  border: "4px solid rgba(255,255,255,0.1)"
+                }}>
+                  {selectedUser.username[0].toUpperCase()}
+                </div>
+                <div style={{ 
+                  fontSize: "24px", 
+                  marginBottom: "12px",
+                  fontWeight: "500" 
+                }}>
+                  {selectedUser.username}
+                </div>
+                <div style={{ 
+                  fontSize: "16px",
+                  color: "rgba(255,255,255,0.7)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}>
+                  <div style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    backgroundColor: callState === "outgoing" ? "#ffc107" : "#dc3545",
+                    animation: "pulse 1.5s infinite"
+                  }} />
+                  {callState === "outgoing" ? "Calling..." : "Connecting..."}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Local video - PiP */}
+          {(callState === "connected" || callState === "outgoing") && (
+            <div style={{
+              position: "absolute",
+              top: "20px",
+              right: "20px",
+              width: isMobileDevice ? "100px" : "180px",
+              height: isMobileDevice ? "150px" : "240px",
+              borderRadius: "12px",
+              overflow: "hidden",
+              border: "2px solid rgba(255, 255, 255, 0.2)",
+              backgroundColor: "#000",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)"
+            }}>
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  transform: "scaleX(-1)" // Mirror effect
+                }}
+              />
+              {!isCameraOn && (
+                <div style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: "rgba(0,0,0,0.8)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#fff",
+                  fontSize: isMobileDevice ? "12px" : "14px",
+                  fontWeight: "500"
+                }}>
+                  Camera Off
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Call controls */}
+          <div style={{
+            position: "absolute",
+            bottom: "30px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            gap: "20px",
+            padding: "16px 24px",
+            borderRadius: "50px",
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            backdropFilter: "blur(10px)",
+            border: "1px solid rgba(255,255,255,0.1)"
+          }}>
+            <button
+              onClick={toggleMic}
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                border: "none",
+                backgroundColor: isMicMuted ? "#dc3545" : "#28a745",
+                color: "#fff",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "all 0.2s ease",
+                boxShadow: `0 4px 12px ${isMicMuted ? "rgba(220,53,69,0.3)" : "rgba(40,167,69,0.3)"}`,
+              }}
+            >
+              <MicIcon muted={isMicMuted} />
+            </button>
+
+            <button
+              onClick={toggleCamera}
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                border: "none",
+                backgroundColor: isCameraOn ? "#28a745" : "#dc3545",
+                color: "#fff",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "all 0.2s ease",
+                boxShadow: `0 4px 12px ${isCameraOn ? "rgba(40,167,69,0.3)" : "rgba(220,53,69,0.3)"}`,
+              }}
+            >
+              <CameraIcon enabled={isCameraOn} />
+            </button>
+
+            <button
+              onClick={endCall}
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                border: "none",
+                backgroundColor: "#dc3545",
+                color: "#fff",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "all 0.2s ease",
+                boxShadow: "0 4px 12px rgba(220,53,69,0.3)",
+              }}
+            >
+              <EndCallIcon />
+            </button>
+          </div>
+
+          {/* Call timer and status */}
+          <div style={{
+            position: "absolute",
+            top: "20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "8px 16px",
+            borderRadius: "20px",
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            color: "#fff",
+            fontSize: "14px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}>
+            <div style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: callState === "connected" ? "#28a745" : "#ffc107"
+            }}></div>
+            {callState === "connected" ? (
+              <span>{formatTime(callTimer)}</span>
+            ) : (
+              <span>{callState === "outgoing" ? "Calling..." : "Connecting..."}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {showMediaGallery && (
         <div className="media-gallery">
@@ -2874,164 +3189,6 @@ const ChatWindow = ({
           <span>{uploading ? "Sending..." : "Send"}</span>
         </button>
       </form>
-
-      {callState === "connected" && isVideoCall && (
-        <div className="video-call-container" style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0, 0, 0, 0.9)",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-        }}>
-          <div style={{ position: "relative", flex: 1, width: "100%", height: "100%" }}>
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                backgroundColor: "#000",
-              }}
-            />
-            
-            <div style={{
-              position: "absolute",
-              top: "16px",
-              right: "16px",
-              width: "180px",
-              height: "240px",
-              borderRadius: "8px",
-              overflow: "hidden",
-              border: "2px solid rgba(255,255,255,0.3)",
-              boxShadow: "0 4px 8px rgba(0,0,0,0.3)",
-              backgroundColor: "#333",
-            }}>
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  transform: "scaleX(-1)", // Mirror local video
-                }}
-              />
-            </div>
-            
-            {/* Add call timer at top */}
-            <div style={{
-              position: "absolute",
-              top: "16px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              backgroundColor: "rgba(0,0,0,0.5)",
-              color: "white",
-              padding: "4px 12px",
-              borderRadius: "16px",
-              fontSize: "14px",
-            }}>
-              {formatTime(callTimer)}
-            </div>
-          </div>
-          
-          <div style={{
-            display: "flex",
-            justifyContent: "center",
-            padding: "20px",
-            gap: "16px",
-            backgroundColor: "rgba(0,0,0,0.7)",
-          }}>
-            <button
-              onClick={toggleMic}
-              style={{
-                width: "50px",
-                height: "50px",
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: isMicMuted ? "#f44336" : "#555",
-                color: "white",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
-            >
-              {isMicMuted ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                  <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                  <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
-                </svg>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
-                </svg>
-              )}
-            </button>
-            <button
-              onClick={toggleCamera}
-              style={{
-                width: "50px",
-                height: "50px",
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: isCameraOn ? "#555" : "#f44336",
-                color: "white",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
-            >
-              {isCameraOn ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect>
-                  <circle cx="12" cy="12" r="4"></circle>
-                </svg>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                  <rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect>
-                  <circle cx="12" cy="12" r="4"></circle>
-                </svg>
-              )}
-            </button>
-            <button
-              onClick={endCall}
-              style={{
-                width: "50px",
-                height: "50px",
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: "#f44336",
-                color: "white",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7a2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.79 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path>
-                <line x1="23" y1="1" x2="1" y2="23"></line>
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
