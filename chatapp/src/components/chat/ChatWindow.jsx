@@ -154,6 +154,54 @@ const EndCallIcon = () => (
   </svg>
 );
 
+// Add these debug helper functions at the top
+const debugLog = (component, action, details = null) => {
+  const timestamp = new Date().toISOString().split('T')[1];
+  console.log(`[${timestamp}][${component}] ${action}`, details || '');
+};
+
+const checkMediaDevices = async () => {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const hasAudio = devices.some(device => device.kind === 'audioinput');
+    const hasVideo = devices.some(device => device.kind === 'videoinput');
+    
+    debugLog('Devices', 'Available devices', {
+      audio: hasAudio ? 'Yes' : 'No',
+      video: hasVideo ? 'Yes' : 'No',
+      devices: devices.map(d => ({ kind: d.kind, label: d.label }))
+    });
+    
+    return { hasAudio, hasVideo };
+  } catch (error) {
+    debugLog('Devices', 'Error checking devices', error);
+    return { hasAudio: false, hasVideo: false };
+  }
+};
+
+const checkStreamTracks = (stream, context) => {
+  if (!stream) {
+    debugLog('Stream', `${context} - No stream available`);
+    return;
+  }
+
+  const audioTracks = stream.getAudioTracks();
+  const videoTracks = stream.getVideoTracks();
+
+  debugLog('Stream', `${context} - Tracks`, {
+    audio: audioTracks.map(track => ({
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState
+    })),
+    video: videoTracks.map(track => ({
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState
+    }))
+  });
+};
+
 const ChatWindow = ({
   selectedUser,
   hideHeader,
@@ -1140,12 +1188,12 @@ const ChatWindow = ({
 
   const createPeerConnection = async () => {
     try {
+      debugLog('PeerConnection', 'Creating new connection');
       const pc = new RTCPeerConnection(servers);
-      console.log("Created peer connection");
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log("Sending ICE candidate");
+          debugLog('ICE', 'New ICE candidate', event.candidate);
           sendSignalingMessage({
             type: "ice-candidate",
             candidate: event.candidate,
@@ -1155,44 +1203,55 @@ const ChatWindow = ({
         }
       };
 
+      pc.oniceconnectionstatechange = () => {
+        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
+      };
+
       pc.ontrack = (event) => {
-        console.log("Received remote track:", event.track.kind);
+        debugLog('Track', 'Received remote track', {
+          kind: event.track.kind,
+          enabled: event.track.enabled
+        });
+
         if (event.streams && event.streams[0]) {
           const remoteMediaStream = event.streams[0];
-          console.log("Setting remote stream");
+          debugLog('Stream', 'Received remote stream');
+          checkStreamTracks(remoteMediaStream, 'Remote Stream');
+          
           setRemoteStream(remoteMediaStream);
 
-          // Handle both audio and video
           if (remoteAudioRef.current) {
+            debugLog('Audio', 'Setting remote audio');
             remoteAudioRef.current.srcObject = remoteMediaStream;
           }
 
           if (remoteVideoRef.current && isVideoCall) {
-            console.log("Setting remote video source");
+            debugLog('Video', 'Setting remote video');
             remoteVideoRef.current.srcObject = remoteMediaStream;
             remoteVideoRef.current.play().catch(err => {
-              console.error("Error playing remote video:", err);
+              debugLog('Video', 'Error playing remote video', err);
+              toast.error("Failed to display remote video");
             });
           }
         }
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("Connection state changed:", pc.connectionState);
+        debugLog('PeerConnection', 'Connection state changed', pc.connectionState);
         switch (pc.connectionState) {
           case "connected":
-            console.log("WebRTC connection established");
+            debugLog('Call', 'Connection established');
             setCallState("connected");
             startCallTimer();
             break;
           case "disconnected":
           case "failed":
-            console.log("WebRTC connection failed or disconnected");
+            debugLog('Call', 'Connection failed or disconnected');
             toast.error("Call connection lost");
             endCall();
             break;
           case "closed":
-            console.log("WebRTC connection closed");
+            debugLog('Call', 'Connection closed');
             endCall();
             break;
         }
@@ -1202,7 +1261,7 @@ const ChatWindow = ({
       setPeerConnection(pc);
       return pc;
     } catch (error) {
-      console.error("Error creating peer connection:", error);
+      debugLog('PeerConnection', 'Error creating connection', error);
       toast.error("Failed to create call connection");
       return null;
     }
@@ -1222,13 +1281,25 @@ const ChatWindow = ({
 
   const startCall = async (withVideo = false) => {
     try {
+      debugLog('Call', 'Starting call', { withVideo });
+      
+      // Check available devices first
+      const { hasAudio, hasVideo } = await checkMediaDevices();
+      if (!hasAudio) {
+        toast.error("No microphone found. Please check your audio device.");
+        return;
+      }
+      if (withVideo && !hasVideo) {
+        toast.error("No camera found. Please check your video device.");
+        return;
+      }
+
       cleanupCall();
       await new Promise(resolve => setTimeout(resolve, 500));
 
       setIsVideoCall(withVideo);
       setCallState("outgoing");
-
-      console.log("Starting call with video:", withVideo);
+      
       const constraints = {
         audio: true,
         video: withVideo ? {
@@ -1238,17 +1309,20 @@ const ChatWindow = ({
         } : false
       };
 
-      console.log("Getting user media with constraints:", constraints);
+      debugLog('Media', 'Requesting media with constraints', constraints);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Got local stream tracks:", stream.getTracks().map(t => t.kind));
+      debugLog('Media', 'Got local stream');
+      checkStreamTracks(stream, 'Local Stream');
+      
       setLocalStream(stream);
 
       if (withVideo && localVideoRef.current) {
-        console.log("Setting up local video preview");
+        debugLog('Video', 'Setting up local video preview');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         await localVideoRef.current.play().catch(err => {
-          console.error("Error playing local video:", err);
+          debugLog('Video', 'Error playing local video', err);
+          toast.error("Failed to display local video preview");
         });
       }
 
@@ -1256,13 +1330,13 @@ const ChatWindow = ({
       if (!pc) return;
 
       stream.getTracks().forEach(track => {
-        console.log("Adding track to peer connection:", track.kind);
+        debugLog('PeerConnection', `Adding ${track.kind} track`);
         pc.addTrack(track, stream);
       });
 
-      console.log("Creating offer");
+      debugLog('PeerConnection', 'Creating offer');
       const offer = await pc.createOffer();
-      console.log("Setting local description");
+      debugLog('PeerConnection', 'Setting local description');
       await pc.setLocalDescription(offer);
 
       sendSignalingMessage({
@@ -1275,8 +1349,8 @@ const ChatWindow = ({
 
       toast.info(`${withVideo ? 'Video' : 'Audio'} calling ${selectedUser.username}...`);
     } catch (error) {
-      console.error("Error in startCall:", error);
-      toast.error("Failed to start call. Please check your device permissions.");
+      debugLog('Call', 'Error in startCall', error);
+      toast.error(`Failed to start call: ${error.message}`);
       cleanupCall();
     }
   };
@@ -1473,9 +1547,13 @@ const ChatWindow = ({
     if (localStream) {
       const audioTracks = localStream.getAudioTracks();
       if (audioTracks.length > 0) {
-        // Set the mute state directly based on the current state
-        audioTracks[0].enabled = isMicMuted;
-        setIsMicMuted(!isMicMuted);
+        const newState = isMicMuted;
+        audioTracks[0].enabled = newState;
+        setIsMicMuted(!newState);
+        debugLog('Audio', 'Toggled microphone', { enabled: newState });
+      } else {
+        debugLog('Audio', 'No audio tracks found');
+        toast.error("No microphone found");
       }
     }
   };
@@ -1586,8 +1664,13 @@ const ChatWindow = ({
     if (localStream && isVideoCall) {
       const videoTracks = localStream.getVideoTracks();
       if (videoTracks.length > 0) {
-        videoTracks[0].enabled = !isCameraOn;
-        setIsCameraOn(!isCameraOn);
+        const newState = !isCameraOn;
+        videoTracks[0].enabled = newState;
+        setIsCameraOn(newState);
+        debugLog('Video', 'Toggled camera', { enabled: newState });
+      } else {
+        debugLog('Video', 'No video tracks found');
+        toast.error("No camera found");
       }
     }
   };
