@@ -1296,14 +1296,30 @@ const ChatWindow = ({
       pc.ontrack = (event) => {
         debugLog('Track', 'Received remote track', {
           kind: event.track.kind,
-          enabled: event.track.enabled
+          enabled: event.track.enabled,
+          readyState: event.track.readyState,
+          muted: event.track.muted
         });
 
         if (event.streams && event.streams[0]) {
           const remoteMediaStream = event.streams[0];
-          debugLog('Stream', 'Received remote stream');
-          checkStreamTracks(remoteMediaStream, 'Remote Stream');
+          debugLog('Stream', 'Received remote stream', {
+            active: remoteMediaStream.active,
+            id: remoteMediaStream.id,
+            trackCount: remoteMediaStream.getTracks().length
+          });
           
+          // Log all tracks in the stream
+          remoteMediaStream.getTracks().forEach(track => {
+            debugLog('Stream Track', {
+              kind: track.kind,
+              enabled: track.enabled,
+              readyState: track.readyState,
+              muted: track.muted
+            });
+          });
+          
+          checkStreamTracks(remoteMediaStream, 'Remote Stream');
           setRemoteStream(remoteMediaStream);
 
           if (remoteAudioRef.current) {
@@ -1314,6 +1330,20 @@ const ChatWindow = ({
           if (remoteVideoRef.current && isVideoCall) {
             debugLog('Video', 'Setting remote video');
             remoteVideoRef.current.srcObject = remoteMediaStream;
+            
+            // Add event listeners to help debug video element state
+            remoteVideoRef.current.onloadedmetadata = () => {
+              debugLog('Video', 'Remote video loadedmetadata event', {
+                videoWidth: remoteVideoRef.current.videoWidth,
+                videoHeight: remoteVideoRef.current.videoHeight,
+                readyState: remoteVideoRef.current.readyState
+              });
+            };
+            
+            remoteVideoRef.current.onplay = () => {
+              debugLog('Video', 'Remote video started playing');
+            };
+
             remoteVideoRef.current.play().catch(err => {
               debugLog('Video', 'Error playing remote video', err);
               toast.error("Failed to display remote video");
