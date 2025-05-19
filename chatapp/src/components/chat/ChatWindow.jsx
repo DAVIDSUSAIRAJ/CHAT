@@ -1326,7 +1326,7 @@ const ChatWindow = ({
             debugLog('Audio', 'Setting remote audio');
             remoteAudioRef.current.srcObject = remoteMediaStream;
           }
-
+         console.log(remoteVideoRef.current && isVideoCall,"remoteVideoRef.current && isVideoCallDavid")
           if (remoteVideoRef.current && isVideoCall) {
             debugLog('Video', 'Setting remote video');
             remoteVideoRef.current.srcObject = remoteMediaStream;
