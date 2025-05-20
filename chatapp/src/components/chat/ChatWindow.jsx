@@ -1651,83 +1651,53 @@ const ChatWindow = ({
 
       debugLog('Media', 'Requesting media with constraints', constraints);
       
-      // Enhanced retry logic for getting user media
       let stream;
       let retries = 3;
-      let lastError;
       
       while (retries > 0) {
         try {
-          // Force release any potentially held devices
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          for (const device of devices) {
-            if (device.label) {
-              debugLog('Media', `Found active device before retry: ${device.kind} - ${device.label}`);
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          debugLog('Media', 'Successfully acquired media stream');
+
+          // Set up local video preview immediately after getting stream
+          if (shouldUseVideo && localVideoRef.current) {
+            debugLog('Video', 'Setting up local video preview');
+            localVideoRef.current.srcObject = stream;
+            localVideoRef.current.muted = true;
+            try {
+              await localVideoRef.current.play();
+              debugLog('Video', 'Local video playing');
+            } catch (err) {
+              debugLog('Video', 'Error playing local video', err);
             }
           }
 
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
-          debugLog('Media', 'Successfully acquired media stream');
           break;
         } catch (err) {
-          lastError = err;
           retries--;
-          
-          // If we failed with video, try falling back to audio-only
-          if (shouldUseVideo && retries > 0) {
-            debugLog('Media', 'Failed with video, trying audio-only fallback');
-            shouldUseVideo = false;
-            constraints.video = false;
-            setIsVideoCall(false);
-            continue;
-          }
-          
-          // Provide specific error messages
-          let errorMessage = "Failed to access media devices";
-          if (err.name === "NotReadableError" || err.name === "AbortError") {
-            errorMessage = "Device is busy or in use by another application. Please close other apps using your camera/microphone.";
-          } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-            errorMessage = "Permission to use camera/microphone was denied. Please check your browser permissions.";
-          } else if (err.name === "NotFoundError") {
-            errorMessage = "No camera/microphone found. Please check your device connections.";
-          }
-          
-          debugLog('Media', `${errorMessage} (${retries} attempts left)`, err);
+          debugLog('Media', `Failed to get media stream (${retries} retries left)`, err);
           
           if (retries === 0) {
-            throw new Error(errorMessage);
+            toast.error("Failed to access camera/microphone. Please check your settings.");
+            throw err;
           }
           
-          // Longer delay between retries
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Try to force cleanup between attempts
-          await cleanupCall();
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
       if (!stream) {
-        throw lastError || new Error("Failed to get media stream after retries");
+        throw new Error("Failed to get local media stream");
       }
 
-      debugLog('Media', 'Got local stream');
-      checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
-
-      if (shouldUseVideo && localVideoRef.current) {
-        debugLog('Video', 'Setting up local video preview');
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-        await localVideoRef.current.play().catch(err => {
-          debugLog('Video', 'Error playing local video', err);
-        });
-      }
 
       const pc = await createPeerConnection();
       if (!pc) throw new Error("Failed to create peer connection");
 
+      // Add all tracks from local stream to peer connection
       stream.getTracks().forEach(track => {
-        debugLog('PeerConnection', `Adding ${track.kind} track`);
+        debugLog('PeerConnection', `Adding ${track.kind} track to peer connection`);
         pc.addTrack(track, stream);
       });
 
@@ -2273,6 +2243,10 @@ const ChatWindow = ({
             />
             {(!remoteStream || callState !== "connected") && (
               <div style={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
@@ -2332,7 +2306,8 @@ const ChatWindow = ({
               overflow: "hidden",
               border: "2px solid rgba(255, 255, 255, 0.2)",
               backgroundColor: "#000",
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)"
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+              zIndex: 10000
             }}>
               <video
                 ref={localVideoRef}
@@ -2367,109 +2342,6 @@ const ChatWindow = ({
               )}
             </div>
           )}
-
-          {/* Call controls */}
-          <div style={{
-            position: "absolute",
-            bottom: "30px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            display: "flex",
-            gap: "20px",
-            padding: "16px 24px",
-            borderRadius: "50px",
-            backgroundColor: "rgba(0, 0, 0, 0.6)",
-            backdropFilter: "blur(10px)",
-            border: "1px solid rgba(255,255,255,0.1)"
-          }}>
-            <button
-              onClick={toggleMic}
-              style={{
-                width: "48px",
-                height: "48px",
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: isMicMuted ? "#dc3545" : "#28a745",
-                color: "#fff",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.2s ease",
-                boxShadow: `0 4px 12px ${isMicMuted ? "rgba(220,53,69,0.3)" : "rgba(40,167,69,0.3)"}`,
-              }}
-            >
-              <MicIcon muted={isMicMuted} />
-            </button>
-
-            <button
-              onClick={toggleCamera}
-              style={{
-                width: "48px",
-                height: "48px",
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: isCameraOn ? "#28a745" : "#dc3545",
-                color: "#fff",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.2s ease",
-                boxShadow: `0 4px 12px ${isCameraOn ? "rgba(40,167,69,0.3)" : "rgba(220,53,69,0.3)"}`,
-              }}
-            >
-              <CameraIcon enabled={isCameraOn} />
-            </button>
-
-            <button
-              onClick={endCall}
-              style={{
-                width: "48px",
-                height: "48px",
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: "#dc3545",
-                color: "#fff",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.2s ease",
-                boxShadow: "0 4px 12px rgba(220,53,69,0.3)",
-              }}
-            >
-              <EndCallIcon />
-            </button>
-          </div>
-
-          {/* Call timer and status */}
-          <div style={{
-            position: "absolute",
-            top: "20px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            padding: "8px 16px",
-            borderRadius: "20px",
-            backgroundColor: "rgba(0, 0, 0, 0.6)",
-            color: "#fff",
-            fontSize: "14px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px"
-          }}>
-            <div style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              backgroundColor: callState === "connected" ? "#28a745" : "#ffc107"
-            }}></div>
-            {callState === "connected" ? (
-              <span>{formatTime(callTimer)}</span>
-            ) : (
-              <span>{callState === "outgoing" ? "Calling..." : "Connecting..."}</span>
-            )}
-          </div>
         </div>
       )}
 
