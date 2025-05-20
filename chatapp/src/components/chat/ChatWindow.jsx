@@ -1323,7 +1323,16 @@ const ChatWindow = ({
           
           checkStreamTracks(remoteMediaStream, 'Remote Stream');
           setRemoteStream(remoteMediaStream);
-          setPendingRemoteStream(remoteMediaStream);
+
+          // Handle video stream
+          if (isVideoCall && remoteVideoRef.current) {
+            debugLog('Video', 'Setting remote video stream');
+            remoteVideoRef.current.srcObject = remoteMediaStream;
+            remoteVideoRef.current.play().catch(err => {
+              debugLog('Video', 'Error playing remote video', err);
+              toast.error("Failed to display remote video");
+            });
+          }
 
           // Handle audio stream
           if (remoteAudioRef.current) {
@@ -1419,6 +1428,7 @@ const ChatWindow = ({
       while (retries > 0) {
         try {
           stream = await navigator.mediaDevices.getUserMedia(constraints);
+          debugLog('Media', 'Got local stream successfully');
           break;
         } catch (err) {
           retries--;
@@ -1436,14 +1446,18 @@ const ChatWindow = ({
       checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
 
+      // Set up local video preview immediately if this is a video call
       if (withVideo && localVideoRef.current) {
         debugLog('Video', 'Setting up local video preview');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
-        await localVideoRef.current.play().catch(err => {
+        try {
+          await localVideoRef.current.play();
+          debugLog('Video', 'Local video playing successfully');
+        } catch (err) {
           debugLog('Video', 'Error playing local video', err);
           toast.error("Failed to display local video preview");
-        });
+        }
       }
 
       const pc = await createPeerConnection();
@@ -1451,8 +1465,9 @@ const ChatWindow = ({
         throw new Error("Failed to create peer connection");
       }
 
+      // Add all tracks from local stream to peer connection
       stream.getTracks().forEach(track => {
-        debugLog('PeerConnection', `Adding ${track.kind} track`);
+        debugLog('PeerConnection', `Adding ${track.kind} track to peer connection`);
         pc.addTrack(track, stream);
       });
 
@@ -1468,6 +1483,18 @@ const ChatWindow = ({
         to: selectedUser.id,
         isVideoCall: withVideo,
       });
+
+      // Double check video elements are properly set up
+      if (withVideo) {
+        debugLog('Video', 'Verifying video elements setup');
+        if (localVideoRef.current && !localVideoRef.current.srcObject) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true;
+          await localVideoRef.current.play().catch(err => {
+            debugLog('Video', 'Error playing local video on verification', err);
+          });
+        }
+      }
 
       toast.info(`${withVideo ? 'Video' : 'Audio'} calling ${selectedUser.username}...`);
     } catch (error) {
@@ -1698,10 +1725,7 @@ const ChatWindow = ({
             throw new Error(errorMessage);
           }
           
-          // Longer delay between retries
           await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Try to force cleanup between attempts
           await cleanupCall();
         }
       }
@@ -1714,20 +1738,26 @@ const ChatWindow = ({
       checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
 
+      // Set up local video preview immediately
       if (shouldUseVideo && localVideoRef.current) {
         debugLog('Video', 'Setting up local video preview');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
-        await localVideoRef.current.play().catch(err => {
+        try {
+          await localVideoRef.current.play();
+          debugLog('Video', 'Local video playing successfully');
+        } catch (err) {
           debugLog('Video', 'Error playing local video', err);
-        });
+          toast.error("Failed to display local video preview");
+        }
       }
 
       const pc = await createPeerConnection();
       if (!pc) throw new Error("Failed to create peer connection");
 
+      // Add all tracks from local stream to peer connection
       stream.getTracks().forEach(track => {
-        debugLog('PeerConnection', `Adding ${track.kind} track`);
+        debugLog('PeerConnection', `Adding ${track.kind} track to peer connection`);
         pc.addTrack(track, stream);
       });
 
@@ -1739,6 +1769,7 @@ const ChatWindow = ({
       debugLog('PeerConnection', 'Setting local description');
       await pc.setLocalDescription(answer);
 
+      // Send answer back to caller
       sendSignalingMessage({
         type: "answer",
         answer: pc.localDescription,
@@ -1751,6 +1782,25 @@ const ChatWindow = ({
       startCallTimer();
       toast.dismiss();
       toast.success(`Call connected with ${selectedUser.username}`);
+
+      // Double check video elements are properly set up
+      if (shouldUseVideo) {
+        debugLog('Video', 'Verifying video elements setup');
+        if (localVideoRef.current && !localVideoRef.current.srcObject) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true;
+          await localVideoRef.current.play().catch(err => {
+            debugLog('Video', 'Error playing local video on verification', err);
+          });
+        }
+        if (remoteVideoRef.current && remoteStream) {
+          remoteVideoRef.current.srcObject = remoteStream;
+          await remoteVideoRef.current.play().catch(err => {
+            debugLog('Video', 'Error playing remote video on verification', err);
+          });
+        }
+      }
+
     } catch (error) {
       debugLog('Call', 'Error in acceptCall', error);
       toast.error(`Failed to accept call: ${error.message}`);
