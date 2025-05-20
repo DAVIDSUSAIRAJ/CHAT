@@ -1234,63 +1234,34 @@ const ChatWindow = ({
           streams: event.streams.length
         });
 
-        if (!event.streams || !event.streams[0]) {
+        const [remoteMediaStream] = event.streams;
+        if (!remoteMediaStream) {
           debugLog('Track', 'No remote stream available');
           return;
         }
 
-        const remoteMediaStream = event.streams[0];
-        debugLog('Stream', 'Setting remote stream');
         setRemoteStream(remoteMediaStream);
-
-        // Handle video track
-        if (isVideoCall && event.track.kind === 'video' && remoteVideoRef.current) {
+        
+        if (isVideoCall && event.track.kind === 'video') {
           debugLog('Video', 'Setting up remote video');
-          remoteVideoRef.current.srcObject = remoteMediaStream;
-          
-          // Ensure video plays
-          const playPromise = remoteVideoRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise.catch(err => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteMediaStream;
+            remoteVideoRef.current.play().catch(err => {
               debugLog('Video', 'Failed to play remote video', err);
-              // Try playing again after a short delay
-              setTimeout(() => {
-                remoteVideoRef.current.play().catch(err => {
-                  debugLog('Video', 'Second attempt to play remote video failed', err);
-                  toast.error("Failed to display remote video");
-                });
-              }, 1000);
             });
           }
         }
 
-        // Handle audio track
-        if (event.track.kind === 'audio' && remoteAudioRef.current) {
+        if (event.track.kind === 'audio') {
           debugLog('Audio', 'Setting up remote audio');
-          remoteAudioRef.current.srcObject = remoteMediaStream;
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = remoteMediaStream;
+          }
         }
 
-        // Monitor track state changes
-        event.track.onmute = () => {
-          debugLog('Track', `Remote ${event.track.kind} track muted`);
-          if (event.track.kind === 'video') {
-            toast.info("Remote video was muted");
-          }
-        };
-        
-        event.track.onunmute = () => {
-          debugLog('Track', `Remote ${event.track.kind} track unmuted`);
-          if (event.track.kind === 'video') {
-            toast.info("Remote video is now available");
-          }
-        };
-        
-        event.track.onended = () => {
-          debugLog('Track', `Remote ${event.track.kind} track ended`);
-          if (event.track.kind === 'video') {
-            toast.warning("Remote video stream ended");
-          }
-        };
+        event.track.onmute = () => debugLog('Track', `Remote ${event.track.kind} track muted`);
+        event.track.onunmute = () => debugLog('Track', `Remote ${event.track.kind} track unmuted`);
+        event.track.onended = () => debugLog('Track', `Remote ${event.track.kind} track ended`);
       };
 
       return pc;
@@ -1777,65 +1748,52 @@ const ChatWindow = ({
     if (!currentUser) return;
 
     const channel = supabase.channel("public:call-signals");
-    
+
     channel.on("broadcast", { event: "call-signal" }, (payload) => {
       if (!payload || !payload.payload) return;
 
       const signal = payload.payload;
-      debugLog('Signal', 'Received signal', { type: signal.type, from: signal.from, to: signal.to });
 
-      // Ignore signals not meant for us
-      if (signal.to !== currentUser.id) {
-        debugLog('Signal', 'Ignoring signal - not for us');
-        return;
-      }
-
-      // Ignore signals if we're not in the right state
-      if (signal.type === 'offer' && callState !== 'idle') {
-        debugLog('Signal', 'Ignoring offer - already in call');
-        return;
-      }
+      if (signal.to !== currentUser.id) return;
 
       switch (signal.type) {
         case "offer":
           if (signal.from === selectedUser?.id) {
-            debugLog('Signal', 'Processing incoming call offer');
             handleIncomingCall(signal);
           }
           break;
-
         case "answer":
           if (callState === "outgoing" && peerConnectionRef.current) {
-            debugLog('Signal', 'Processing call answer');
-            const desc = new RTCSessionDescription(signal.answer);
-            peerConnectionRef.current.setRemoteDescription(desc)
+            peerConnectionRef.current
+              .setRemoteDescriptionAsync(signal.answer)
               .then(() => {
-                debugLog('Call', 'Remote description set successfully');
                 setCallState("connected");
                 startCallTimer();
-                toast.success(`Connected with ${selectedUser.username}`);
+                toast.success(`Call connected with ${selectedUser.username}`);
               })
               .catch((error) => {
                 debugLog('Call', 'Error setting remote description', error);
-                toast.error("Failed to establish connection");
                 endCall();
               });
           }
           break;
-
-              case "ice-candidate":           if (peerConnectionRef.current && (callState === "outgoing" || callState === "connected")) {             debugLog('Signal', 'Adding ICE candidate');             peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate))               .then(() => {                 debugLog('Signal', 'ICE candidate added successfully');               })               .catch((error) => {                 debugLog('Signal', 'Error adding ICE candidate', error);               });            }            break;
-
+        case "ice-candidate":
+          if (peerConnectionRef.current) {
+            peerConnectionRef.current.handleIceCandidate(signal.candidate);
+          }
+          break;
         case "reject":
           if (callState === "outgoing") {
-            debugLog('Signal', 'Call rejected');
             toast.info(`${selectedUser.username} declined the call`);
             cleanupCall();
           }
           break;
-
         case "hangup":
-          if (callState !== "idle") {
-            debugLog('Signal', 'Call hung up by remote peer');
+          if (
+            callState === "connected" ||
+            callState === "incoming" ||
+            callState === "outgoing"
+          ) {
             toast.info(`Call ended by ${selectedUser.username}`);
             cleanupCall();
           }
@@ -1843,15 +1801,11 @@ const ChatWindow = ({
       }
     });
 
-    channel.subscribe((status) => {
-      debugLog('Channel', `Subscription status: ${status}`);
-    });
-
+    channel.subscribe();
     callChannelRef.current = channel;
 
     return () => {
       if (callChannelRef.current) {
-        debugLog('Channel', 'Unsubscribing from call channel');
         callChannelRef.current.unsubscribe();
       }
     };
