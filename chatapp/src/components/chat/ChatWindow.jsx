@@ -1418,7 +1418,15 @@ const ChatWindow = ({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          // Higher quality audio settings
+          sampleRate: { ideal: 48000 },
+          channelCount: { ideal: 1 },
+          // Advanced audio processing
+          googEchoCancellation: true,
+          googAutoGainControl: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true
         },
         video: withVideo ? {
           width: { ideal: 1280 },
@@ -1653,7 +1661,15 @@ const ChatWindow = ({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          // Higher quality audio settings
+          sampleRate: { ideal: 48000 },
+          channelCount: { ideal: 1 },
+          // Advanced audio processing
+          googEchoCancellation: true,
+          googAutoGainControl: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true
         },
         video: shouldUseVideo ? {
           width: { ideal: 1280 },
