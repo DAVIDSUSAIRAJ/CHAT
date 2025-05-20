@@ -298,6 +298,8 @@ const ChatWindow = ({
   const [isCameraOn, setIsCameraOn] = useState(true);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  // Add this state to track if we have a pending remote stream
+  const [pendingRemoteStream, setPendingRemoteStream] = useState(null);
 
   const actualSearchText = isMobileView ? externalSearchText : searchText;
   const actualSetSearchText = isMobileView
@@ -1321,33 +1323,12 @@ const ChatWindow = ({
           
           checkStreamTracks(remoteMediaStream, 'Remote Stream');
           setRemoteStream(remoteMediaStream);
+          setPendingRemoteStream(remoteMediaStream);
 
+          // Handle audio stream
           if (remoteAudioRef.current) {
             debugLog('Audio', 'Setting remote audio');
             remoteAudioRef.current.srcObject = remoteMediaStream;
-          }
-         console.log(remoteVideoRef.current && isVideoCall,"remoteVideoRef.current && isVideoCallDavid")
-          if (remoteVideoRef.current && isVideoCall) {
-            debugLog('Video', 'Setting remote video');
-            remoteVideoRef.current.srcObject = remoteMediaStream;
-            
-            // Add event listeners to help debug video element state
-            remoteVideoRef.current.onloadedmetadata = () => {
-              debugLog('Video', 'Remote video loadedmetadata event', {
-                videoWidth: remoteVideoRef.current.videoWidth,
-                videoHeight: remoteVideoRef.current.videoHeight,
-                readyState: remoteVideoRef.current.readyState
-              });
-            };
-            
-            remoteVideoRef.current.onplay = () => {
-              debugLog('Video', 'Remote video started playing');
-            };
-
-            remoteVideoRef.current.play().catch(err => {
-              debugLog('Video', 'Error playing remote video', err);
-              toast.error("Failed to display remote video");
-            });
           }
         }
       };
@@ -1419,19 +1400,14 @@ const ChatWindow = ({
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          // Higher quality audio settings
           sampleRate: { ideal: 48000 },
-          channelCount: { ideal: 1 },
-          // Advanced audio processing
-          googEchoCancellation: true,
-          googAutoGainControl: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true
+          channelCount: { ideal: 1 }
         },
         video: withVideo ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          facingMode: 'user',
+          frameRate: { ideal: 30, max: 60 }
         } : false
       };
 
@@ -1662,19 +1638,14 @@ const ChatWindow = ({
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          // Higher quality audio settings
           sampleRate: { ideal: 48000 },
-          channelCount: { ideal: 1 },
-          // Advanced audio processing
-          googEchoCancellation: true,
-          googAutoGainControl: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true
+          channelCount: { ideal: 1 }
         },
         video: shouldUseVideo ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          facingMode: 'user',
+          frameRate: { ideal: 30, max: 60 }
         } : false
       };
 
@@ -1953,6 +1924,38 @@ const ChatWindow = ({
       }
     }
   };
+
+  // Add this effect to handle pending remote stream
+  useEffect(() => {
+    if (pendingRemoteStream && remoteVideoRef.current && isVideoCall) {
+      debugLog('Video', 'Applying pending remote stream to video element');
+      remoteVideoRef.current.srcObject = pendingRemoteStream;
+      
+      // Add event listeners for debugging
+      remoteVideoRef.current.onloadedmetadata = () => {
+        debugLog('Video', 'Remote video loadedmetadata event', {
+          videoWidth: remoteVideoRef.current.videoWidth,
+          videoHeight: remoteVideoRef.current.videoHeight,
+          readyState: remoteVideoRef.current.readyState
+        });
+        remoteVideoRef.current.play().catch(err => {
+          debugLog('Video', 'Error playing remote video', err);
+          toast.error("Failed to display remote video");
+        });
+      };
+      
+      remoteVideoRef.current.onplay = () => {
+        debugLog('Video', 'Remote video started playing');
+      };
+
+      remoteVideoRef.current.onerror = (err) => {
+        debugLog('Video', 'Remote video error', err);
+      };
+
+      // Clear the pending stream
+      setPendingRemoteStream(null);
+    }
+  }, [pendingRemoteStream, remoteVideoRef.current, isVideoCall]);
 
   if (!selectedUser) {
     return (
@@ -2257,18 +2260,18 @@ const ChatWindow = ({
             justifyContent: "center",
             backgroundColor: "#1a1a1a"
           }}>
-            {remoteStream && callState === "connected" ? (
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain"
-                }}
-              />
-            ) : (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: remoteStream ? "block" : "none"
+              }}
+            />
+            {(!remoteStream || callState !== "connected") && (
               <div style={{
                 display: "flex",
                 flexDirection: "column",
@@ -2340,7 +2343,8 @@ const ChatWindow = ({
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
-                  transform: "scaleX(-1)" // Mirror effect
+                  transform: "scaleX(-1)", // Mirror effect
+                  display: "block"
                 }}
               />
               {!isCameraOn && (
