@@ -1617,6 +1617,9 @@ const ChatWindow = ({
       await cleanupCall();
       
       setIsVideoCall(call.isVideoCall);
+      if(call.isVideoCall){
+        setCallState("connected");
+      }
       debugLog('Call', 'Accepting call with video:', call.isVideoCall);
 
       // Check device availability first
@@ -1713,6 +1716,8 @@ const ChatWindow = ({
       debugLog('Media', 'Got local stream');
       checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
+      console.log(shouldUseVideo,"shouldUseVideo")
+      console.log(localVideoRef.current,"localVideoRef.current")
 
       if (shouldUseVideo && localVideoRef.current) {
         debugLog('Video', 'Setting up local video preview');
