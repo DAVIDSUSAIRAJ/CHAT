@@ -1203,162 +1203,63 @@ const ChatWindow = ({
 
   const createPeerConnection = async () => {
     try {
-      debugLog('PeerConnection', 'Creating new connection');
+      debugLog('PeerConnection', '🔧 Creating new connection');
       const pc = new RTCPeerConnection(servers);
-      console.log(pc,"pcConnetion")
       
-      // Buffer for ICE candidates received before remote description is set
-      const iceCandidatesBuffer = [];
-      let hasRemoteDescription = false;
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          debugLog('ICE', 'New ICE candidate', event.candidate);
-          sendSignalingMessage({
-            type: "ice-candidate",
-            candidate: event.candidate,
-            from: currentUser.id,
-            to: selectedUser.id,
-          });
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
-        switch(pc.iceConnectionState) {
-          case 'checking':
-            debugLog('ICE', 'Connecting...');
-            break;
-          case 'connected':
-            debugLog('ICE', 'Connected');
-            break;
-          case 'failed':
-            debugLog('ICE', 'Connection failed - attempting restart');
-            pc.restartIce();
-            break;
-          case 'disconnected':
-            debugLog('ICE', 'Disconnected - checking connection');
-            // Attempt to recover from disconnected state
-            setTimeout(() => {
-              if (pc.iceConnectionState === 'disconnected') {
-                pc.restartIce();
-              }
-            }, 3000);
-            break;
-        }
-      };
-
-      // Add method to handle buffered candidates
-      pc.addBufferedCandidates = async () => {
-        if (!hasRemoteDescription) return;
-        
-        debugLog('ICE', `Processing ${iceCandidatesBuffer.length} buffered candidates`);
-        while (iceCandidatesBuffer.length > 0) {
-          const candidate = iceCandidatesBuffer.shift();
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            debugLog('ICE', 'Successfully added buffered candidate');
-          } catch (error) {
-            debugLog('ICE', 'Error adding buffered candidate', error);
-          }
-        }
-      };
-
-      // Add method to handle new ICE candidates
-      pc.handleIceCandidate = async (candidate) => {
-        try {
-          if (!hasRemoteDescription) {
-            debugLog('ICE', 'Buffering ICE candidate until remote description is set');
-            iceCandidatesBuffer.push(candidate);
-            return;
-          }
-
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          debugLog('ICE', 'Successfully added ICE candidate');
-        } catch (error) {
-          debugLog('ICE', 'Error adding ICE candidate', error);
-          // If we get an error, buffer the candidate for retry
-          iceCandidatesBuffer.push(candidate);
-        }
-      };
-
-      // Add method to set remote description
-      pc.setRemoteDescriptionAsync = async (description) => {
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(description));
-          hasRemoteDescription = true;
-          debugLog('PeerConnection', 'Remote description set successfully');
-          await pc.addBufferedCandidates();
-        } catch (error) {
-          debugLog('PeerConnection', 'Error setting remote description', error);
-          throw error;
-        }
-      };
-
       pc.ontrack = (event) => {
-        debugLog('Track', 'Received remote track', {
+        debugLog('Track', '📥 Received remote track', {
           kind: event.track.kind,
-          enabled: event.track.enabled,
-          readyState: event.track.readyState,
-          muted: event.track.muted
+          enabled: event.track.enabled
         });
 
         if (event.streams && event.streams[0]) {
           const remoteMediaStream = event.streams[0];
-          debugLog('Stream', 'Received remote stream', {
-            active: remoteMediaStream.active,
-            id: remoteMediaStream.id,
-            trackCount: remoteMediaStream.getTracks().length
-          });
+          debugLog('Stream', '📥 Processing remote stream');
           
-          // Log all tracks in the stream
-          remoteMediaStream.getTracks().forEach(track => {
-            debugLog('Stream Track', {
-              kind: track.kind,
-              enabled: track.enabled,
-              readyState: track.readyState,
-              muted: track.muted
-            });
-          });
-          
-          checkStreamTracks(remoteMediaStream, 'Remote Stream');
           setRemoteStream(remoteMediaStream);
-          setPendingRemoteStream(remoteMediaStream);
 
-          // Handle audio stream
+          // Handle video separately
+          if (isVideoCall && remoteVideoRef.current) {
+            debugLog('Video', '🎥 Setting up remote video');
+            try {
+              // Clear existing
+              if (remoteVideoRef.current.srcObject) {
+                remoteVideoRef.current.srcObject = null;
+              }
+              
+              // Set new stream
+              remoteVideoRef.current.srcObject = remoteMediaStream;
+              
+              // Force play
+              const playPromise = remoteVideoRef.current.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(err => {
+                  debugLog('Video', '❌ Remote video play failed', err);
+                  toast.error("Failed to play remote video");
+                });
+              }
+            } catch (err) {
+              debugLog('Video', '❌ Remote video setup failed', err);
+            }
+          }
+
+          // Handle audio
           if (remoteAudioRef.current) {
-            debugLog('Audio', 'Setting remote audio');
-            remoteAudioRef.current.srcObject = remoteMediaStream;
+            debugLog('Audio', '🔊 Setting up remote audio');
+            try {
+              remoteAudioRef.current.srcObject = remoteMediaStream;
+            } catch (err) {
+              debugLog('Audio', '❌ Remote audio setup failed', err);
+            }
           }
         }
       };
 
-      pc.onconnectionstatechange = () => {
-        debugLog('PeerConnection', 'Connection state changed', pc.connectionState);
-        switch (pc.connectionState) {
-          case "connected":
-            debugLog('Call', 'Connection established');
-            setCallState("connected");
-            startCallTimer();
-            break;
-          case "disconnected":
-          case "failed":
-            debugLog('Call', 'Connection failed or disconnected');
-            toast.error("Call connection lost");
-            endCall();
-            break;
-          case "closed":
-            debugLog('Call', 'Connection closed');
-            endCall();
-            break;
-        }
-      };
+      // ... rest of createPeerConnection code ...
 
-      peerConnectionRef.current = pc;
-      setPeerConnection(pc);
       return pc;
     } catch (error) {
-      debugLog('PeerConnection', 'Error creating connection', error);
+      debugLog('PeerConnection', '❌ Connection creation failed', error);
       toast.error("Failed to create call connection");
       return null;
     }
@@ -1378,101 +1279,129 @@ const ChatWindow = ({
 
   const startCall = async (withVideo = false) => {
     try {
-      debugLog('Call', 'Starting call', { withVideo });
+      debugLog('Call', '📞 Call acceptance starting', { withVideo });
       
-      // Check available devices first
-      const { hasAudio, hasVideo } = await checkMediaDevices();
-      if (!hasAudio) {
-        throw new Error("No microphone found. Please check your audio device.");
-      }
-      if (withVideo && !hasVideo) {
-        throw new Error("No camera found. Please check your video device.");
-      }
-
-      // Clean up any existing call state
+      // 1. முதலில் cleanup
       await cleanupCall();
-
-      setIsVideoCall(withVideo);
-      setCallState("outgoing");
       
+      // 2. Video call state set
+      const isVideoEnabled = call.isVideoCall;
+      setIsVideoCall(isVideoEnabled);
+      debugLog('Call', '🎥 Video state set', { isVideoEnabled });
+
+      // 3. Device check
+      const { hasAudio, hasVideo } = await checkMediaDevices();
+      if (!hasAudio) throw new Error("Microphone not found");
+      if (isVideoEnabled && !hasVideo) {
+        toast.warning("Camera not available - switching to audio call");
+        setIsVideoCall(false);
+      }
+
+      // 4. Media constraints
       const constraints = {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: { ideal: 48000 },
-          channelCount: { ideal: 1 }
+          autoGainControl: true
         },
-        video: withVideo ? {
-          width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 480, ideal: 720, max: 1080 },
-          facingMode: 'user',
-          frameRate: { ideal: 30, max: 60 }
+        video: isVideoEnabled && hasVideo ? {
+          width: { min: 640, ideal: 1280 },
+          height: { min: 480, ideal: 720 },
+          frameRate: { ideal: 30 }
         } : false
       };
 
-      debugLog('Media', 'Requesting media with constraints', constraints);
-      
-      // Add retry logic for getting user media
-      let stream;
-      let retries = 3;
-      while (retries > 0) {
+      // 5. Get local stream
+      debugLog('Media', '📱 Requesting media access', constraints);
+      let localMediaStream;
+      try {
+        localMediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        debugLog('Media', '✅ Got local stream', {
+          audioTracks: localMediaStream.getAudioTracks().length,
+          videoTracks: localMediaStream.getVideoTracks().length
+        });
+      } catch (err) {
+        debugLog('Media', '❌ Media access failed', err);
+        throw new Error(`Media access failed: ${err.message}`);
+      }
+
+      // 6. Setup local video FIRST
+      if (isVideoEnabled && hasVideo && localVideoRef.current) {
+        debugLog('Video', '🎥 Setting up local video preview');
         try {
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
-          break;
+          // Clear existing
+          if (localVideoRef.current.srcObject) {
+            localVideoRef.current.srcObject = null;
+          }
+          
+          // Set new stream
+          localVideoRef.current.srcObject = localMediaStream;
+          localVideoRef.current.muted = true;
+          
+          // Force play
+          const playPromise = localVideoRef.current.play();
+          if (playPromise !== undefined) {
+            await playPromise;
+            debugLog('Video', '▶️ Local video playing');
+          }
         } catch (err) {
-          retries--;
-          if (retries === 0) throw err;
-          debugLog('Media', `Failed to get media, retrying... (${retries} attempts left)`, err);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          debugLog('Video', '❌ Local video setup failed', err);
+          toast.error("Failed to show your video");
         }
       }
 
-      if (!stream) {
-        throw new Error("Failed to get media stream after retries");
-      }
-
-      debugLog('Media', 'Got local stream');
-      checkStreamTracks(stream, 'Local Stream');
-      setLocalStream(stream);
-
-      if (withVideo && localVideoRef.current) {
-        debugLog('Video', 'Setting up local video preview');
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-        await localVideoRef.current.play().catch(err => {
-          debugLog('Video', 'Error playing local video', err);
-          toast.error("Failed to display local video preview");
-        });
-      }
-
+      // 7. Create peer connection
+      debugLog('PeerConnection', '🤝 Creating peer connection');
       const pc = await createPeerConnection();
-      if (!pc) {
-        throw new Error("Failed to create peer connection");
-      }
+      if (!pc) throw new Error("Failed to create connection");
 
-      stream.getTracks().forEach(track => {
-        debugLog('PeerConnection', `Adding ${track.kind} track`);
-        pc.addTrack(track, stream);
+      // 8. Add tracks to peer connection
+      localMediaStream.getTracks().forEach(track => {
+        debugLog('Track', `➕ Adding ${track.kind} track`, {
+          enabled: track.enabled,
+          muted: track.muted
+        });
+        pc.addTrack(track, localMediaStream);
       });
 
-      debugLog('PeerConnection', 'Creating offer');
-      const offer = await pc.createOffer();
-      debugLog('PeerConnection', 'Setting local description');
-      await pc.setLocalDescription(offer);
+      // 9. Set remote description (their offer)
+      debugLog('PeerConnection', '📥 Processing remote offer');
+      await pc.setRemoteDescriptionAsync(call.offer);
 
+      // 10. Create and set local description (our answer)
+      debugLog('PeerConnection', '📤 Creating answer');
+      const answer = await pc.createAnswer();
+      debugLog('PeerConnection', '📝 Setting local description');
+      await pc.setLocalDescription(answer);
+
+      // 11. Store streams
+      setLocalStream(localMediaStream);
+
+      // 12. Send answer
       sendSignalingMessage({
-        type: "offer",
-        offer: pc.localDescription,
+        type: "answer",
+        answer: pc.localDescription,
         from: currentUser.id,
-        to: selectedUser.id,
-        isVideoCall: withVideo,
+        to: call.from,
+        isVideoCall: isVideoEnabled && hasVideo
       });
 
-      toast.info(`${withVideo ? 'Video' : 'Audio'} calling ${selectedUser.username}...`);
+      // 13. Update UI state
+      setCallState("connected");
+      startCallTimer();
+
+      // 14. Final status check
+      debugLog('Call', '✅ Call setup complete', {
+        isVideoCall: isVideoEnabled && hasVideo,
+        hasLocalStream: !!localMediaStream,
+        hasRemoteStream: !!remoteStream,
+        peerConnectionState: pc.connectionState
+      });
+
+      toast.success(`Connected with ${selectedUser.username}`);
     } catch (error) {
-      debugLog('Call', 'Error in startCall', error);
-      toast.error(`Failed to start call: ${error.message}`);
+      debugLog('Call', '❌ Call setup failed', error);
+      toast.error(`Call failed: ${error.message}`);
       await cleanupCall();
     }
   };
@@ -1611,149 +1540,129 @@ const ChatWindow = ({
 
   const acceptCall = async (call) => {
     try {
-      debugLog('Call', 'Starting call acceptance');
+      debugLog('Call', '📞 Call acceptance starting', { isVideoCall: call.isVideoCall });
       
-      // Ensure thorough cleanup first
+      // 1. முதலில் cleanup
       await cleanupCall();
       
-      setIsVideoCall(call.isVideoCall);
-      debugLog('Call', 'Accepting call with video:', call.isVideoCall);
+      // 2. Video call state set
+      const isVideoEnabled = call.isVideoCall;
+      setIsVideoCall(isVideoEnabled);
+      debugLog('Call', '🎥 Video state set', { isVideoEnabled });
 
-      // Check device availability first
+      // 3. Device check
       const { hasAudio, hasVideo } = await checkMediaDevices();
-      if (!hasAudio) {
-        throw new Error("No microphone found");
-      }
-
-      // If video is requested but not available, we'll fall back to audio
-      let shouldUseVideo = call.isVideoCall && hasVideo;
-      if (call.isVideoCall && !hasVideo) {
-        debugLog('Media', 'Video device not available, falling back to audio only');
-        toast.info("Camera not available. Continuing with audio only.");
+      if (!hasAudio) throw new Error("Microphone not found");
+      if (isVideoEnabled && !hasVideo) {
+        toast.warning("Camera not available - switching to audio call");
         setIsVideoCall(false);
       }
 
+      // 4. Media constraints
       const constraints = {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: { ideal: 48000 },
-          channelCount: { ideal: 1 }
+          autoGainControl: true
         },
-        video: shouldUseVideo ? {
-          width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 480, ideal: 720, max: 1080 },
-          facingMode: 'user',
-          frameRate: { ideal: 30, max: 60 }
+        video: isVideoEnabled && hasVideo ? {
+          width: { min: 640, ideal: 1280 },
+          height: { min: 480, ideal: 720 },
+          frameRate: { ideal: 30 }
         } : false
       };
 
-      debugLog('Media', 'Requesting media with constraints', constraints);
-      
-      // Enhanced retry logic for getting user media
-      let stream;
-      let retries = 3;
-      let lastError;
-      
-      while (retries > 0) {
-        try {
-          // Force release any potentially held devices
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          for (const device of devices) {
-            if (device.label) {
-              debugLog('Media', `Found active device before retry: ${device.kind} - ${device.label}`);
-            }
-          }
+      // 5. Get local stream
+      debugLog('Media', '📱 Requesting media access', constraints);
+      let localMediaStream;
+      try {
+        localMediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        debugLog('Media', '✅ Got local stream', {
+          audioTracks: localMediaStream.getAudioTracks().length,
+          videoTracks: localMediaStream.getVideoTracks().length
+        });
+      } catch (err) {
+        debugLog('Media', '❌ Media access failed', err);
+        throw new Error(`Media access failed: ${err.message}`);
+      }
 
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
-          debugLog('Media', 'Successfully acquired media stream');
-          break;
+      // 6. Setup local video FIRST
+      if (isVideoEnabled && hasVideo && localVideoRef.current) {
+        debugLog('Video', '🎥 Setting up local video preview');
+        try {
+          // Clear existing
+          if (localVideoRef.current.srcObject) {
+            localVideoRef.current.srcObject = null;
+          }
+          
+          // Set new stream
+          localVideoRef.current.srcObject = localMediaStream;
+          localVideoRef.current.muted = true;
+          
+          // Force play
+          const playPromise = localVideoRef.current.play();
+          if (playPromise !== undefined) {
+            await playPromise;
+            debugLog('Video', '▶️ Local video playing');
+          }
         } catch (err) {
-          lastError = err;
-          retries--;
-          
-          // If we failed with video, try falling back to audio-only
-          if (shouldUseVideo && retries > 0) {
-            debugLog('Media', 'Failed with video, trying audio-only fallback');
-            shouldUseVideo = false;
-            constraints.video = false;
-            setIsVideoCall(false);
-            continue;
-          }
-          
-          // Provide specific error messages
-          let errorMessage = "Failed to access media devices";
-          if (err.name === "NotReadableError" || err.name === "AbortError") {
-            errorMessage = "Device is busy or in use by another application. Please close other apps using your camera/microphone.";
-          } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-            errorMessage = "Permission to use camera/microphone was denied. Please check your browser permissions.";
-          } else if (err.name === "NotFoundError") {
-            errorMessage = "No camera/microphone found. Please check your device connections.";
-          }
-          
-          debugLog('Media', `${errorMessage} (${retries} attempts left)`, err);
-          
-          if (retries === 0) {
-            throw new Error(errorMessage);
-          }
-          
-          // Longer delay between retries
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Try to force cleanup between attempts
-          await cleanupCall();
+          debugLog('Video', '❌ Local video setup failed', err);
+          toast.error("Failed to show your video");
         }
       }
 
-      if (!stream) {
-        throw lastError || new Error("Failed to get media stream after retries");
-      }
-
-      debugLog('Media', 'Got local stream');
-      checkStreamTracks(stream, 'Local Stream');
-      setLocalStream(stream);
-
-      if (shouldUseVideo && localVideoRef.current) {
-        debugLog('Video', 'Setting up local video preview');
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-        await localVideoRef.current.play().catch(err => {
-          debugLog('Video', 'Error playing local video', err);
-        });
-      }
-
+      // 7. Create peer connection
+      debugLog('PeerConnection', '🤝 Creating peer connection');
       const pc = await createPeerConnection();
-      if (!pc) throw new Error("Failed to create peer connection");
+      if (!pc) throw new Error("Failed to create connection");
 
-      stream.getTracks().forEach(track => {
-        debugLog('PeerConnection', `Adding ${track.kind} track`);
-        pc.addTrack(track, stream);
+      // 8. Add tracks to peer connection
+      localMediaStream.getTracks().forEach(track => {
+        debugLog('Track', `➕ Adding ${track.kind} track`, {
+          enabled: track.enabled,
+          muted: track.muted
+        });
+        pc.addTrack(track, localMediaStream);
       });
 
-      debugLog('PeerConnection', 'Setting remote description from offer');
-      await pc.setRemoteDescriptionAsync(new RTCSessionDescription(call.offer));
-      
-      debugLog('PeerConnection', 'Creating answer');
+      // 9. Set remote description (their offer)
+      debugLog('PeerConnection', '📥 Processing remote offer');
+      await pc.setRemoteDescriptionAsync(call.offer);
+
+      // 10. Create and set local description (our answer)
+      debugLog('PeerConnection', '📤 Creating answer');
       const answer = await pc.createAnswer();
-      debugLog('PeerConnection', 'Setting local description');
+      debugLog('PeerConnection', '📝 Setting local description');
       await pc.setLocalDescription(answer);
 
+      // 11. Store streams
+      setLocalStream(localMediaStream);
+
+      // 12. Send answer
       sendSignalingMessage({
         type: "answer",
         answer: pc.localDescription,
         from: currentUser.id,
         to: call.from,
-        isVideoCall: shouldUseVideo
+        isVideoCall: isVideoEnabled && hasVideo
       });
 
+      // 13. Update UI state
       setCallState("connected");
       startCallTimer();
-      toast.dismiss();
-      toast.success(`Call connected with ${selectedUser.username}`);
+
+      // 14. Final status check
+      debugLog('Call', '✅ Call setup complete', {
+        isVideoCall: isVideoEnabled && hasVideo,
+        hasLocalStream: !!localMediaStream,
+        hasRemoteStream: !!remoteStream,
+        peerConnectionState: pc.connectionState
+      });
+
+      toast.success(`Connected with ${selectedUser.username}`);
     } catch (error) {
-      debugLog('Call', 'Error in acceptCall', error);
-      toast.error(`Failed to accept call: ${error.message}`);
+      debugLog('Call', '❌ Call setup failed', error);
+      toast.error(`Call failed: ${error.message}`);
       await cleanupCall();
     }
   };
