@@ -1418,7 +1418,7 @@ body {
 
 /* Mobile Responsive Styles */
 @media (max-width: 767px) {
-  .message-input {
+  /* .message-input {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -1427,12 +1427,12 @@ body {
     background: white;
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
     z-index: 1000;
-  }
+  } */
 
-  .message-input-field {
+  /* .message-input-field {
     background: white;
     z-index: 1001;
-  }
+  } */
 
   .voice-record-btn {
     z-index: 1001;
