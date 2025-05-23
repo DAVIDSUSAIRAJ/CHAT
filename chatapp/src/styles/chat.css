@@ -731,7 +731,21 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    z-index: 1000;
+    z-index: 9999;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    margin-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .messages-container {
+    padding-bottom: 80px;
+  }
+
+  .attachment-menu,
+  .file-preview-container,
+  .audio-preview-container,
+  .video-preview-container {
+    z-index: 10000;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0));
   }
 
   .message-input-field {
