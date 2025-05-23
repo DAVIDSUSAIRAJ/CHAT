@@ -1029,7 +1029,6 @@
   .messages-container {
     height: calc(100vh - 120px);
     padding-bottom: 80px !important;
-    margin-bottom: 60px;
   }
 
   .chat-window-container {
