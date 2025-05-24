@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { supabase, createRealtimeChannel } from "../../lib/supabaseClient";
 import { toast } from "react-toastify";
 import "../../styles/chat.css"; /* Voice button custom styles */
@@ -240,7 +240,7 @@ const getICEServers = () => {
   };
 };
 
-const ChatWindow = ({
+const ChatWindow = forwardRef(({
   selectedUser,
   hideHeader,
   showMediaGallery = false,
@@ -248,7 +248,7 @@ const ChatWindow = ({
   searchText: externalSearchText,
   setSearchText: externalSetSearchText,
   isMobileView,
-}) => {
+}, ref) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
@@ -1962,6 +1962,11 @@ const ChatWindow = ({
     }
   }, [pendingRemoteStream, remoteVideoRef.current, isVideoCall]);
 
+  // Expose startCall function to parent component
+  useImperativeHandle(ref, () => ({
+    startCall
+  }));
+
   if (!selectedUser) {
     return (
       <div className="chat-window empty">
@@ -3562,6 +3567,6 @@ const ChatWindow = ({
       </form>
     </div>
   );
-};
+});
 
 export default ChatWindow;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import ChatList from '../components/chat/ChatList';
@@ -45,7 +45,15 @@ const ChatPage = () => {
   const [isMobileView, setIsMobileView] = useState(window.innerWidth <= 767);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [callState, setCallState] = useState('idle');
   const navigate = useNavigate();
+  const chatWindowRef = useRef(null);
+
+  const handleStartCall = (isVideo) => {
+    if (chatWindowRef.current && selectedUser) {
+      chatWindowRef.current.startCall(isVideo);
+    }
+  };
 
   // Check for saved user when component mounts
   useEffect(() => {
@@ -126,6 +134,7 @@ const ChatPage = () => {
         </div>
         <div className="chat-window-wrapper">
           <ChatWindow 
+            ref={chatWindowRef}
             selectedUser={selectedUser} 
             hideHeader={false}
             showMediaGallery={showMediaGallery}
@@ -179,15 +188,17 @@ const ChatPage = () => {
             <div className="mobile-header-right">
               <button 
                 className="mobile-icon-btn"
-                onClick={() => {/* TODO: Implement audio call */}}
+                onClick={() => handleStartCall(false)}
                 title="Audio Call"
+                disabled={!selectedUser || callState !== 'idle'}
               >
                 <AudioCallIcon />
               </button>
               <button 
                 className="mobile-icon-btn"
-                onClick={() => {/* TODO: Implement video call */}}
+                onClick={() => handleStartCall(true)}
                 title="Video Call"
+                disabled={!selectedUser || callState !== 'idle'}
               >
                 <VideoCallIcon />
               </button>
@@ -222,6 +233,7 @@ const ChatPage = () => {
             </div>
           </div>
           <ChatWindow 
+            ref={chatWindowRef}
             selectedUser={selectedUser} 
             hideHeader={true}
             showMediaGallery={showMediaGallery}
