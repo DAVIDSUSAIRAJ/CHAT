@@ -214,13 +214,12 @@ const getICEServers = () => {
           "stun:stun.l.google.com:19302",
           "stun:stun3.l.google.com:19302",
           "stun:stun4.l.google.com:19302",
-          // Additional STUN servers for better connectivity
           "stun:stun.stunprotocol.org:3478",
           "stun:stun.voip.blackberry.com:3478",
           "stun:stun.nextcloud.com:443"
         ],
       },
-      // TURN Servers - fallback when STUN fails
+      // Primary TURN servers
       {
         urls: [
           "turn:david_chat_app.metered.live:80",
@@ -234,10 +233,79 @@ const getICEServers = () => {
       }
     ],
     iceCandidatePoolSize: 10,
-    iceTransportPolicy: 'all', // Try 'relay' if still having issues
+    iceTransportPolicy: 'relay', // Force TURN server usage
     bundlePolicy: 'max-bundle',
-    rtcpMuxPolicy: 'require'
+    rtcpMuxPolicy: 'require',
+    iceServersTimeout: 2000 // 2 seconds timeout for ICE gathering
   };
+};
+
+// Add connection monitoring function
+const monitorConnectionQuality = (pc) => {
+  if (!pc) return;
+
+  const checkQuality = async () => {
+    try {
+      const stats = await pc.getStats();
+      let totalPacketsLost = 0;
+      let totalPackets = 0;
+      let roundTripTime = 0;
+      let candidateType = '';
+
+      stats.forEach(stat => {
+        if (stat.type === 'candidate-pair' && stat.state === 'succeeded') {
+          candidateType = stat.remoteCandidateType;
+        }
+        if (stat.type === 'inbound-rtp') {
+          totalPacketsLost += stat.packetsLost || 0;
+          totalPackets += stat.packetsReceived || 0;
+        }
+        if (stat.type === 'remote-candidate') {
+          roundTripTime = stat.roundTripTime;
+        }
+      });
+
+      const packetLossRate = totalPackets > 0 ? (totalPacketsLost / totalPackets) * 100 : 0;
+      
+      debugLog('Connection', 'Quality Stats', {
+        packetLossRate,
+        roundTripTime,
+        candidateType
+      });
+
+      // If packet loss is high, try to reconnect
+      if (packetLossRate > 15) {
+        debugLog('Connection', 'High packet loss detected, attempting reconnection');
+        await restartICE(pc);
+      }
+    } catch (error) {
+      debugLog('Connection', 'Error monitoring quality', error);
+    }
+  };
+
+  // Check quality every 3 seconds
+  return setInterval(checkQuality, 3000);
+};
+
+// Add ICE restart function
+const restartICE = async (pc) => {
+  if (!pc) return;
+  
+  try {
+    debugLog('ICE', 'Attempting ICE restart');
+    const offer = await pc.createOffer({ iceRestart: true });
+    await pc.setLocalDescription(offer);
+    
+    // Send the new offer to the remote peer
+    sendSignalingMessage({
+      type: "restart-offer",
+      offer: pc.localDescription,
+      from: currentUser.id,
+      to: selectedUser.id
+    });
+  } catch (error) {
+    debugLog('ICE', 'Error during ICE restart', error);
+  }
 };
 
 const ChatWindow = forwardRef(({
@@ -1205,8 +1273,44 @@ const ChatWindow = forwardRef(({
     try {
       debugLog('PeerConnection', 'Creating new connection');
       const pc = new RTCPeerConnection(servers);
-      console.log(pc,"pcConnetion")
       
+      // Start monitoring connection quality
+      const qualityMonitor = monitorConnectionQuality(pc);
+      
+      pc.oniceconnectionstatechange = () => {
+        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
+        switch(pc.iceConnectionState) {
+          case 'checking':
+            debugLog('ICE', 'Connecting...');
+            break;
+          case 'connected':
+            debugLog('ICE', 'Connected');
+            break;
+          case 'failed':
+            debugLog('ICE', 'Connection failed - attempting restart');
+            restartICE(pc);
+            break;
+          case 'disconnected':
+            debugLog('ICE', 'Disconnected - checking connection');
+            // More aggressive reconnection strategy
+            setTimeout(async () => {
+              if (pc.iceConnectionState === 'disconnected') {
+                await restartICE(pc);
+              }
+            }, 1000); // Try reconnecting after 1 second
+            break;
+        }
+      };
+
+      // Enhanced error handling
+      pc.onicecandidateerror = (event) => {
+        debugLog('ICE', 'Candidate error', {
+          errorCode: event.errorCode,
+          errorText: event.errorText,
+          hostCandidate: event.hostCandidate
+        });
+      };
+
       // Buffer for ICE candidates received before remote description is set
       const iceCandidatesBuffer = [];
       let hasRemoteDescription = false;
@@ -1220,31 +1324,6 @@ const ChatWindow = forwardRef(({
             from: currentUser.id,
             to: selectedUser.id,
           });
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
-        switch(pc.iceConnectionState) {
-          case 'checking':
-            debugLog('ICE', 'Connecting...');
-            break;
-          case 'connected':
-            debugLog('ICE', 'Connected');
-            break;
-          case 'failed':
-            debugLog('ICE', 'Connection failed - attempting restart');
-            pc.restartIce();
-            break;
-          case 'disconnected':
-            debugLog('ICE', 'Disconnected - checking connection');
-            // Attempt to recover from disconnected state
-            setTimeout(() => {
-              if (pc.iceConnectionState === 'disconnected') {
-                pc.restartIce();
-              }
-            }, 3000);
-            break;
         }
       };
 
@@ -1886,6 +1965,38 @@ const ChatWindow = forwardRef(({
           ) {
             toast.info(`Call ended by ${selectedUser.username}`);
             cleanupCall();
+          }
+          break;
+        case "restart-offer":
+          if (peerConnectionRef.current && callState === "connected") {
+            peerConnectionRef.current
+              .setRemoteDescription(signal.offer)
+              .then(async () => {
+                const answer = await peerConnectionRef.current.createAnswer();
+                await peerConnectionRef.current.setLocalDescription(answer);
+                
+                sendSignalingMessage({
+                  type: "restart-answer",
+                  answer: peerConnectionRef.current.localDescription,
+                  from: currentUser.id,
+                  to: signal.from
+                });
+              })
+              .catch((error) => {
+                debugLog('Call', 'Error handling restart offer', error);
+                endCall();
+              });
+          }
+          break;
+        
+        case "restart-answer":
+          if (peerConnectionRef.current && callState === "connected") {
+            peerConnectionRef.current
+              .setRemoteDescription(signal.answer)
+              .catch((error) => {
+                debugLog('Call', 'Error handling restart answer', error);
+                endCall();
+              });
           }
           break;
       }
