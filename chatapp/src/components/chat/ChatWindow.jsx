@@ -203,18 +203,46 @@ const checkStreamTracks = (stream, context) => {
 };
 
 // Add this near the top of your file
+// const getICEServers = () => {
+//   return {
+//     iceServers: [
+//       {
+//         urls: [
+//           "stun:stun1.l.google.com:19302",
+//           "stun:stun2.l.google.com:19302",
+//           "stun:stun.l.google.com:19302",
+//           "stun:stun3.l.google.com:19302",
+//           "stun:stun4.l.google.com:19302"
+//         ],
+//       },
+//       {
+//         urls: "turn:david_chat_app.metered.live:80",
+//         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//         credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//       },
+//       {
+//         urls: "turn:david_chat_app.metered.live:80?transport=tcp",
+//         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//         credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//       },
+//       {
+//         urls: "turn:david_chat_app.metered.live:443",
+//         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//         credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//       },
+//       {
+//         urls: "turn:david_chat_app.metered.live:443?transport=tcp",
+//         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//         credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+//       }
+//     ],
+//     iceCandidatePoolSize: 10
+//   };
+// };
+
 const getICEServers = () => {
   return {
     iceServers: [
-      {
-        urls: [
-          "stun:stun1.l.google.com:19302",
-          "stun:stun2.l.google.com:19302",
-          "stun:stun.l.google.com:19302",
-          "stun:stun3.l.google.com:19302",
-          "stun:stun4.l.google.com:19302"
-        ],
-      },
       {
         urls: "turn:david_chat_app.metered.live:80",
         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
@@ -239,6 +267,7 @@ const getICEServers = () => {
     iceCandidatePoolSize: 10
   };
 };
+
 
 const ChatWindow = forwardRef(({
   selectedUser,
@@ -1204,7 +1233,10 @@ const ChatWindow = forwardRef(({
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
-      const pc = new RTCPeerConnection(servers);
+      const pc = new RTCPeerConnection({
+        ...servers,
+        iceTransportPolicy: "relay", // Force only TURN (relay) candidates
+      });
       console.log(pc,"pcConnetion")
       
       // Buffer for ICE candidates received before remote description is set
