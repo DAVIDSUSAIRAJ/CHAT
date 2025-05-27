@@ -1237,9 +1237,12 @@ const ChatWindow = forwardRef(({
         ...servers,
         iceTransportPolicy: "relay", // Force only TURN (relay) candidates
       });
+      console.log(pc,"pcConnetion")
       
-      // CRITICAL: Set up onicecandidate immediately after creating the connection
-      // This must be done before any setLocalDescription calls
+      // Buffer for ICE candidates received before remote description is set
+      const iceCandidatesBuffer = [];
+      let hasRemoteDescription = false;
+
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           debugLog('ICE', 'New ICE candidate', event.candidate);
@@ -1249,8 +1252,6 @@ const ChatWindow = forwardRef(({
             from: currentUser.id,
             to: selectedUser.id,
           });
-        } else {
-          debugLog('ICE', 'ICE candidate gathering complete');
         }
       };
 
@@ -1269,12 +1270,60 @@ const ChatWindow = forwardRef(({
             break;
           case 'disconnected':
             debugLog('ICE', 'Disconnected - checking connection');
+            // Attempt to recover from disconnected state
             setTimeout(() => {
               if (pc.iceConnectionState === 'disconnected') {
                 pc.restartIce();
               }
             }, 3000);
             break;
+        }
+      };
+
+      // Add method to handle buffered candidates
+      pc.addBufferedCandidates = async () => {
+        if (!hasRemoteDescription) return;
+        
+        debugLog('ICE', `Processing ${iceCandidatesBuffer.length} buffered candidates`);
+        while (iceCandidatesBuffer.length > 0) {
+          const candidate = iceCandidatesBuffer.shift();
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            debugLog('ICE', 'Successfully added buffered candidate');
+          } catch (error) {
+            debugLog('ICE', 'Error adding buffered candidate', error);
+          }
+        }
+      };
+
+      // Add method to handle new ICE candidates
+      pc.handleIceCandidate = async (candidate) => {
+        try {
+          if (!hasRemoteDescription) {
+            debugLog('ICE', 'Buffering ICE candidate until remote description is set');
+            iceCandidatesBuffer.push(candidate);
+            return;
+          }
+
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          debugLog('ICE', 'Successfully added ICE candidate');
+        } catch (error) {
+          debugLog('ICE', 'Error adding ICE candidate', error);
+          // If we get an error, buffer the candidate for retry
+          iceCandidatesBuffer.push(candidate);
+        }
+      };
+
+      // Add method to set remote description
+      pc.setRemoteDescriptionAsync = async (description) => {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(description));
+          hasRemoteDescription = true;
+          debugLog('PeerConnection', 'Remote description set successfully');
+          await pc.addBufferedCandidates();
+        } catch (error) {
+          debugLog('PeerConnection', 'Error setting remote description', error);
+          throw error;
         }
       };
 
@@ -1294,10 +1343,21 @@ const ChatWindow = forwardRef(({
             trackCount: remoteMediaStream.getTracks().length
           });
           
+          // Log all tracks in the stream
+          remoteMediaStream.getTracks().forEach(track => {
+            debugLog('Stream Track', {
+              kind: track.kind,
+              enabled: track.enabled,
+              readyState: track.readyState,
+              muted: track.muted
+            });
+          });
+          
           checkStreamTracks(remoteMediaStream, 'Remote Stream');
           setRemoteStream(remoteMediaStream);
           setPendingRemoteStream(remoteMediaStream);
 
+          // Handle audio stream
           if (remoteAudioRef.current) {
             debugLog('Audio', 'Setting remote audio');
             remoteAudioRef.current.srcObject = remoteMediaStream;
