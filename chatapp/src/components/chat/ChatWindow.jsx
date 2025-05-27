@@ -1626,21 +1626,12 @@ const ChatWindow = forwardRef(({
 
       debugLog('Media', 'Requesting media with constraints', constraints);
       
-      // Enhanced retry logic for getting user media
       let stream;
       let retries = 3;
       let lastError;
       
       while (retries > 0) {
         try {
-          // Force release any potentially held devices
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          for (const device of devices) {
-            if (device.label) {
-              debugLog('Media', `Found active device before retry: ${device.kind} - ${device.label}`);
-            }
-          }
-
           stream = await navigator.mediaDevices.getUserMedia(constraints);
           debugLog('Media', 'Successfully acquired media stream');
           break;
@@ -1648,7 +1639,6 @@ const ChatWindow = forwardRef(({
           lastError = err;
           retries--;
           
-          // If we failed with video, try falling back to audio-only
           if (shouldUseVideo && retries > 0) {
             debugLog('Media', 'Failed with video, trying audio-only fallback');
             shouldUseVideo = false;
@@ -1657,39 +1647,22 @@ const ChatWindow = forwardRef(({
             continue;
           }
           
-          // Provide specific error messages
-          let errorMessage = "Failed to access media devices";
-          if (err.name === "NotReadableError" || err.name === "AbortError") {
-            errorMessage = "Device is busy or in use by another application. Please close other apps using your camera/microphone.";
-          } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-            errorMessage = "Permission to use camera/microphone was denied. Please check your browser permissions.";
-          } else if (err.name === "NotFoundError") {
-            errorMessage = "No camera/microphone found. Please check your device connections.";
-          }
-          
-          debugLog('Media', `${errorMessage} (${retries} attempts left)`, err);
-          
           if (retries === 0) {
-            throw new Error(errorMessage);
+            throw new Error("Failed to access media devices: " + err.message);
           }
           
-          // Longer delay between retries
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Try to force cleanup between attempts
+          await new Promise(resolve => setTimeout(resolve, 1000));
           await cleanupCall();
         }
       }
 
       if (!stream) {
-        throw lastError || new Error("Failed to get media stream after retries");
+        throw lastError || new Error("Failed to get media stream");
       }
 
       debugLog('Media', 'Got local stream');
       checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
-      console.log(shouldUseVideo,"shouldUseVideo")
-      console.log(localVideoRef.current,"localVideoRef.current")
 
       if (shouldUseVideo && localVideoRef.current) {
         debugLog('Video', 'Setting up local video preview');
@@ -1709,7 +1682,8 @@ const ChatWindow = forwardRef(({
       });
 
       debugLog('PeerConnection', 'Setting remote description from offer');
-      await pc.setRemoteDescriptionAsync(new RTCSessionDescription(call.offer));
+      // Use standard setRemoteDescription instead of the async version
+      await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
       
       debugLog('PeerConnection', 'Creating answer');
       const answer = await pc.createAnswer();
