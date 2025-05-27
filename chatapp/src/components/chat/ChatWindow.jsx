@@ -243,28 +243,30 @@ const checkStreamTracks = (stream, context) => {
 const getICEServers = () => {
   return {
     iceServers: [
+      // STUN servers first
       {
-        urls: "turn:david_chat_app.metered.live:80",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+        urls: [
+          "stun:stun1.l.google.com:19302",
+          "stun:stun2.l.google.com:19302",
+          "stun:stun.l.google.com:19302",
+          "stun:stun3.l.google.com:19302",
+          "stun:stun4.l.google.com:19302",
+        ],
       },
+      // Primary TURN servers with both TCP and UDP
       {
-        urls: "turn:david_chat_app.metered.live:80?transport=tcp",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:443",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:443?transport=tcp",
+        urls: [
+          "turn:david_chat_app.metered.live:443?transport=tcp",
+          "turn:david_chat_app.metered.live:443",
+          "turn:david_chat_app.metered.live:80?transport=tcp",
+          "turn:david_chat_app.metered.live:80",
+        ],
         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
         credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
       }
     ],
-    iceCandidatePoolSize: 10
+    iceCandidatePoolSize: 10,
+    iceTransportPolicy: "relay"  // Force TURN usage
   };
 };
 
