@@ -1232,17 +1232,29 @@ const ChatWindow = forwardRef(({
 
   const createPeerConnection = async () => {
     try {
-      debugLog('PeerConnection', 'Creating new connection');
+      debugLog('PeerConnection', 'Creating new connection with ICE config', servers);
       const pc = new RTCPeerConnection({
         ...servers,
         iceTransportPolicy: "relay", // Force only TURN (relay) candidates
       });
       
-      // CRITICAL: Set up onicecandidate immediately after creating the connection
-      // This must be done before any setLocalDescription calls
+      // Add debug log before setting onicecandidate
+      debugLog('ICE', 'Setting up ICE candidate handler');
+      
       pc.onicecandidate = (event) => {
+        debugLog('ICE', 'ICE candidate event triggered', {
+          hasCandidate: !!event.candidate,
+          candidateType: event.candidate?.type,
+          candidateProtocol: event.candidate?.protocol
+        });
+        
         if (event.candidate) {
-          debugLog('ICE', 'New ICE candidate', event.candidate);
+          debugLog('ICE', 'Sending ICE candidate', {
+            type: event.candidate.type,
+            protocol: event.candidate.protocol,
+            address: event.candidate.address
+          });
+          
           sendSignalingMessage({
             type: "ice-candidate",
             candidate: event.candidate,
@@ -1254,28 +1266,19 @@ const ChatWindow = forwardRef(({
         }
       };
 
+      // Add ICE connection state change handler
       pc.oniceconnectionstatechange = () => {
-        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
-        switch(pc.iceConnectionState) {
-          case 'checking':
-            debugLog('ICE', 'Connecting...');
-            break;
-          case 'connected':
-            debugLog('ICE', 'Connected');
-            break;
-          case 'failed':
-            debugLog('ICE', 'Connection failed - attempting restart');
-            pc.restartIce();
-            break;
-          case 'disconnected':
-            debugLog('ICE', 'Disconnected - checking connection');
-            setTimeout(() => {
-              if (pc.iceConnectionState === 'disconnected') {
-                pc.restartIce();
-              }
-            }, 3000);
-            break;
-        }
+        debugLog('ICE', 'ICE connection state changed', {
+          state: pc.iceConnectionState,
+          gatheringState: pc.iceGatheringState
+        });
+      };
+
+      // Add ICE gathering state change handler
+      pc.onicegatheringstatechange = () => {
+        debugLog('ICE', 'ICE gathering state changed', {
+          state: pc.iceGatheringState
+        });
       };
 
       pc.ontrack = (event) => {
