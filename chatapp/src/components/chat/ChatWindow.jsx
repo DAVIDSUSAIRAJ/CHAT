@@ -1801,7 +1801,7 @@ const ChatWindow = forwardRef(({
         case "answer":
           if (callState === "outgoing" && peerConnectionRef.current) {
             peerConnectionRef.current
-              .setRemoteDescriptionAsync(signal.answer)
+              .setRemoteDescription(new RTCSessionDescription(signal.answer))
               .then(() => {
                 setCallState("connected");
                 startCallTimer();
