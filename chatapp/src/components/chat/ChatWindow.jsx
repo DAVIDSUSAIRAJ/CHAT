@@ -206,37 +206,37 @@ const checkStreamTracks = (stream, context) => {
 const getICEServers = () => {
   return {
     iceServers: [
+      // STUN Servers - help with NAT traversal
       {
         urls: [
           "stun:stun1.l.google.com:19302",
           "stun:stun2.l.google.com:19302",
           "stun:stun.l.google.com:19302",
           "stun:stun3.l.google.com:19302",
-          "stun:stun4.l.google.com:19302"
+          "stun:stun4.l.google.com:19302",
+          // Additional STUN servers for better connectivity
+          "stun:stun.stunprotocol.org:3478",
+          "stun:stun.voip.blackberry.com:3478",
+          "stun:stun.nextcloud.com:443"
         ],
       },
+      // TURN Servers - fallback when STUN fails
       {
-        urls: "turn:david_chat_app.metered.live:80",
+        urls: [
+          "turn:david_chat_app.metered.live:80",
+          "turn:david_chat_app.metered.live:80?transport=tcp",
+          "turn:david_chat_app.metered.live:443",
+          "turn:david_chat_app.metered.live:443?transport=tcp"
+        ],
         username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
         credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:80?transport=tcp",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:443",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:443?transport=tcp",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
+        credentialType: "password"
       }
     ],
-    iceCandidatePoolSize: 10
+    iceCandidatePoolSize: 10,
+    iceTransportPolicy: 'all', // Try 'relay' if still having issues
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require'
   };
 };
 
