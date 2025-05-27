@@ -1243,17 +1243,17 @@ const ChatWindow = forwardRef(({
       const iceCandidatesBuffer = [];
       let hasRemoteDescription = false;
 
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          debugLog('ICE', 'New ICE candidate', event.candidate);
-          sendSignalingMessage({
-            type: "ice-candidate",
-            candidate: event.candidate,
-            from: currentUser.id,
-            to: selectedUser.id,
-          });
-        }
-      };
+      // pc.onicecandidate = (event) => {
+      //   if (event.candidate) {
+      //     debugLog('ICE', 'New ICE candidate', event.candidate);
+      //     sendSignalingMessage({
+      //       type: "ice-candidate",
+      //       candidate: event.candidate,
+      //       from: currentUser.id,
+      //       to: selectedUser.id,
+      //     });
+      //   }
+      // };
 
       pc.oniceconnectionstatechange = () => {
         debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
@@ -1479,9 +1479,23 @@ const ChatWindow = forwardRef(({
       }
 
       const pc = await createPeerConnection();
+
       if (!pc) {
         throw new Error("Failed to create peer connection");
       }
+      
+      pc.onicecandidate = (event) => {
+        console.log(event,"eventDavid")
+        if (event.candidate) {
+          debugLog('ICE', 'New ICE candidate', event.candidate);
+          sendSignalingMessage({
+            type: "ice-candidate",
+            candidate: event.candidate,
+            from: currentUser.id,
+            to: selectedUser.id,
+          });
+        }
+      };
 
       stream.getTracks().forEach(track => {
         debugLog('PeerConnection', `Adding ${track.kind} track`);
@@ -1762,6 +1776,18 @@ const ChatWindow = forwardRef(({
 
       const pc = await createPeerConnection();
       if (!pc) throw new Error("Failed to create peer connection");
+      pc.onicecandidate = (event) => {
+        console.log(event,"eventDavid")
+        if (event.candidate) {
+          debugLog('ICE', 'New ICE candidate', event.candidate);
+          sendSignalingMessage({
+            type: "ice-candidate",
+            candidate: event.candidate,
+            from: currentUser.id,
+            to: selectedUser.id,
+          });
+        }
+      };
 
       stream.getTracks().forEach(track => {
         debugLog('PeerConnection', `Adding ${track.kind} track`);
