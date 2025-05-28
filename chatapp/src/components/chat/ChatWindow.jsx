@@ -203,41 +203,43 @@ const checkStreamTracks = (stream, context) => {
 };
 
 // Add this near the top of your file
-const getICEServers = () => {
-  return {
-    iceServers: [
-      {
-        urls: [
-          "stun:stun1.l.google.com:19302",
-          "stun:stun2.l.google.com:19302",
-          "stun:stun.l.google.com:19302",
-          "stun:stun3.l.google.com:19302",
-          "stun:stun4.l.google.com:19302"
-        ],
+const fetchICEServers = async () => {
+  try {
+    const response = await fetch("https://global.xirsys.net/_turn/davidChatApp", {
+      method: "PUT",
+      headers: {
+        "Authorization": "Basic " + btoa("Davidsusairaj:eb67096e-3bc1-11f0-a94e-0242ac150003"),
+        "Content-Type": "application/json"
       },
-      {
-        urls: "turn:david_chat_app.metered.live:80",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:80?transport=tcp",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:443",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      },
-      {
-        urls: "turn:david_chat_app.metered.live:443?transport=tcp",
-        username: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-        credential: "9ApdwHtYqVPC-81Ue3rnw7FVV7TNzaHtFZt95-ygbAJE8MyJt",
-      }
-    ],
-    iceCandidatePoolSize: 10
-  };
+      body: JSON.stringify({ format: "urls" })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch ICE servers');
+    }
+
+    const data = await response.json();
+    debugLog('ICE', 'Fetched ICE servers from Xirsys', data.v.iceServers);
+    
+    return {
+      iceServers: data.v.iceServers,
+      iceCandidatePoolSize: 10
+    };
+  } catch (error) {
+    debugLog('ICE', 'Error fetching ICE servers', error);
+    // Fallback to public STUN servers if Xirsys fails
+    return {
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+          ]
+        }
+      ],
+      iceCandidatePoolSize: 10
+    };
+  }
 };
 
 const ChatWindow = forwardRef(({
@@ -1199,11 +1201,10 @@ const ChatWindow = forwardRef(({
     };
   }, []);
 
-  const servers = getICEServers();
-
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
+      const servers = await fetchICEServers();
       const pc = new RTCPeerConnection(servers);
       console.log(pc,"pcConnetion")
       
@@ -1359,7 +1360,30 @@ const ChatWindow = forwardRef(({
       return pc;
     } catch (error) {
       debugLog('PeerConnection', 'Error creating connection', error);
-      toast.error("Failed to create call connection");
+      
+      // If the error is related to ICE servers, try one more time with just STUN
+      if (error.message.includes('ICE') || error.message.includes('TURN')) {
+        debugLog('PeerConnection', 'Retrying with STUN servers only');
+        try {
+          const fallbackServers = {
+            iceServers: [
+              {
+                urls: [
+                  "stun:stun.l.google.com:19302",
+                  "stun:stun1.l.google.com:19302"
+                ]
+              }
+            ],
+            iceCandidatePoolSize: 10
+          };
+          const pc = new RTCPeerConnection(fallbackServers);
+          return pc;
+        } catch (fallbackError) {
+          debugLog('PeerConnection', 'Fallback attempt failed', fallbackError);
+        }
+      }
+      
+      toast.error("Failed to create call connection. Please try again.");
       return null;
     }
   };
