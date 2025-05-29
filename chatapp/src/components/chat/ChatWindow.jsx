@@ -1219,7 +1219,7 @@ const ChatWindow = forwardRef(({
       const servers = await fetchICEServers();
       const pc = new RTCPeerConnection(servers);
       
-      // Buffer for ICE candidates
+      // Create a buffer for candidates that arrive before remote description
       const pendingCandidates = [];
       let remoteDescriptionSet = false;
 
@@ -1282,8 +1282,8 @@ const ChatWindow = forwardRef(({
         }
       };
 
-      // Rename this to setRemoteDescriptionAsync to match the calling code
-      pc.setRemoteDescriptionAsync = async (description) => {
+      // Enhance remote description setting
+      pc.setRemoteDescription = async (description) => {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(description));
           remoteDescriptionSet = true;
@@ -1613,6 +1613,9 @@ const ChatWindow = forwardRef(({
       await cleanupCall();
       
       setIsVideoCall(call.isVideoCall);
+      if(call.isVideoCall){
+        setCallState("connected");
+      }
       debugLog('Call', 'Accepting call with video:', call.isVideoCall);
 
       // Check device availability first
@@ -1621,42 +1624,123 @@ const ChatWindow = forwardRef(({
         throw new Error("No microphone found");
       }
 
-      // If video is requested but not available, fall back to audio
+      // If video is requested but not available, we'll fall back to audio
       let shouldUseVideo = call.isVideoCall && hasVideo;
       if (call.isVideoCall && !hasVideo) {
         debugLog('Media', 'Video device not available, falling back to audio only');
         toast.info("Camera not available. Continuing with audio only.");
         setIsVideoCall(false);
-        shouldUseVideo = false;
       }
 
       const constraints = {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          sampleRate: { ideal: 48000 },
+          channelCount: { ideal: 1 }
         },
         video: shouldUseVideo ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          facingMode: 'user',
+          frameRate: { ideal: 30, max: 60 }
         } : false
       };
 
       debugLog('Media', 'Requesting media with constraints', constraints);
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Enhanced retry logic for getting user media
+      let stream;
+      let retries = 3;
+      let lastError;
+      
+      while (retries > 0) {
+        try {
+          // Force release any potentially held devices
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          for (const device of devices) {
+            if (device.label) {
+              debugLog('Media', `Found active device before retry: ${device.kind} - ${device.label}`);
+            }
+          }
+
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          debugLog('Media', 'Successfully acquired media stream');
+          break;
+        } catch (err) {
+          lastError = err;
+          retries--;
+          
+          // If we failed with video, try falling back to audio-only
+          if (shouldUseVideo && retries > 0) {
+            debugLog('Media', 'Failed with video, trying audio-only fallback');
+            shouldUseVideo = false;
+            constraints.video = false;
+            setIsVideoCall(false);
+            continue;
+          }
+          
+          // Provide specific error messages
+          let errorMessage = "Failed to access media devices";
+          if (err.name === "NotReadableError" || err.name === "AbortError") {
+            errorMessage = "Device is busy or in use by another application. Please close other apps using your camera/microphone.";
+          } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+            errorMessage = "Permission to use camera/microphone was denied. Please check your browser permissions.";
+          } else if (err.name === "NotFoundError") {
+            errorMessage = "No camera/microphone found. Please check your device connections.";
+          }
+          
+          debugLog('Media', `${errorMessage} (${retries} attempts left)`, err);
+          
+          if (retries === 0) {
+            throw new Error(errorMessage);
+          }
+          
+          // Longer delay between retries
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Try to force cleanup between attempts
+          await cleanupCall();
+        }
+      }
+
+      if (!stream) {
+        throw lastError || new Error("Failed to get media stream after retries");
+      }
+
       debugLog('Media', 'Got local stream');
+      checkStreamTracks(stream, 'Local Stream');
       setLocalStream(stream);
+      console.log(shouldUseVideo,"shouldUseVideo")
+      console.log(localVideoRef.current,"localVideoRef.current")
 
       if (shouldUseVideo && localVideoRef.current) {
+        debugLog('Video', 'Setting up local video preview');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
+        await localVideoRef.current.play().catch(err => {
+          debugLog('Video', 'Error playing local video', err);
+        });
       }
 
       const pc = await createPeerConnection();
       if (!pc) throw new Error("Failed to create peer connection");
+      pc.onicecandidate = (event) => {
+        console.log(event,"eventDavid")
+        if (event.candidate) {
+          debugLog('ICE', 'New ICE candidate', event.candidate);
+          sendSignalingMessage({
+            type: "ice-candidate",
+            candidate: event.candidate,
+            from: currentUser.id,
+            to: selectedUser.id,
+          });
+        }
+      };
 
       stream.getTracks().forEach(track => {
-        debugLog('PeerConnection', `Adding ${track.kind} track to peer connection`);
+        debugLog('PeerConnection', `Adding ${track.kind} track`);
         pc.addTrack(track, stream);
       });
 
