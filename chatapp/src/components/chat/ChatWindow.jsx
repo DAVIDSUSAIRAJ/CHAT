@@ -270,7 +270,7 @@ const getICEServers = async () => {
     });
 
     return {
-      iceServers: iceServers,
+      iceServers: [iceServers],
       iceCandidatePoolSize: 10
     };
   } catch (error) {
