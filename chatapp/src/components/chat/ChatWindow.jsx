@@ -254,15 +254,23 @@ const getICEServers = async () => {
     if (!response.ok) throw new Error("Failed to get ICE servers");
     
     const data = await response.json();
-    let iceServers = data.v.iceServers;
-
-    // Reorder the URLs to prioritize TCP
-    if (iceServers && iceServers[0] && iceServers[0].urls) {
-      iceServers[0].urls = reorderUrls(iceServers[0].urls);
+    
+    // Fix 1: Ensure iceServers is properly formatted
+    if (!data.v || !data.v.iceServers || !Array.isArray(data.v.iceServers)) {
+      console.error("Invalid ICE server format from API:", data);
+      return getICEServers_fallback();
     }
 
+    // Fix 2: Ensure each ICE server has the correct format
+    const iceServers = data.v.iceServers.map(server => {
+      if (typeof server === 'string') {
+        return { urls: server };
+      }
+      return server;
+    });
+
     return {
-      iceServers,
+      iceServers: iceServers,
       iceCandidatePoolSize: 10
     };
   } catch (error) {
@@ -1257,10 +1265,21 @@ const ChatWindow = forwardRef(({
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
-      const servers = await  getICEServers();
-      console.log(servers,"serversDavidONe")
+      const iceConfig = await getICEServers();
+      
+      // Debug log to check the configuration
+      console.log('ICE Configuration:', JSON.stringify(iceConfig, null, 2));
 
-      const pc = new RTCPeerConnection(servers);
+      // Ensure iceServers is an array
+      if (!Array.isArray(iceConfig.iceServers)) {
+        throw new Error('Invalid ICE server configuration');
+      }
+
+      const pc = new RTCPeerConnection({
+        iceServers: iceConfig.iceServers,
+        iceCandidatePoolSize: iceConfig.iceCandidatePoolSize
+      });
+
       console.log(pc,"pcConnetion")
       
       // Buffer for ICE candidates received before remote description is set
@@ -1415,8 +1434,10 @@ const ChatWindow = forwardRef(({
       return pc;
     } catch (error) {
       debugLog('PeerConnection', 'Error creating connection', error);
-      toast.error("Failed to create call connection");
-      return null;
+      // Use fallback configuration
+      const fallbackConfig = getICEServers_fallback();
+      const pc = new RTCPeerConnection(fallbackConfig);
+      return pc;
     }
   };
 
