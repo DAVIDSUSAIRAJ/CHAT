@@ -1257,7 +1257,7 @@ const ChatWindow = forwardRef(({
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
-      const servers = await  getIceServers();
+      const servers = await  getICEServers();
       console.log(servers,"serversDavidONe")
 
       const pc = new RTCPeerConnection(servers);
