@@ -1277,9 +1277,34 @@ const ChatWindow = forwardRef(({
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: iceConfig.iceServers,
-        iceCandidatePoolSize: iceConfig.iceCandidatePoolSize
+        iceServers: [
+          {
+            urls: "stun:stun.relay.metered.ca:80"
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80",
+            username: "553cdc8b7053ca05f989e7bb",
+            credential: "cTlUjMPhtUte2tox"
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80?transport=tcp",
+            username: "553cdc8b7053ca05f989e7bb",
+            credential: "cTlUjMPhtUte2tox"
+          },
+          {
+            urls: "turn:global.relay.metered.ca:443",
+            username: "553cdc8b7053ca05f989e7bb",
+            credential: "cTlUjMPhtUte2tox"
+          },
+          {
+            urls: "turns:global.relay.metered.ca:443?transport=tcp",
+            username: "553cdc8b7053ca05f989e7bb",
+            credential: "cTlUjMPhtUte2tox"
+          }
+        ],
+        iceCandidatePoolSize: 10
       });
+      
 
       console.log(pc,"pcConnetion")
       
