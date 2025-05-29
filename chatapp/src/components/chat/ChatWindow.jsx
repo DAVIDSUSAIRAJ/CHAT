@@ -254,23 +254,24 @@ const getICEServers = async () => {
     if (!response.ok) throw new Error("Failed to get ICE servers");
     
     const data = await response.json();
+    console.log(data,"data")
     
     // Fix 1: Ensure iceServers is properly formatted
-    if (!data.v || !data.v.iceServers || !Array.isArray(data.v.iceServers)) {
-      console.error("Invalid ICE server format from API:", data);
-      return getICEServers_fallback();
-    }
+    // if (!data.v || !data.v.iceServers || !Array.isArray(data.v.iceServers)) {
+    //   console.error("Invalid ICE server format from API:", data);
+    //   return getICEServers_fallback();
+    // }
 
     // Fix 2: Ensure each ICE server has the correct format
-    const iceServers = data.v.iceServers.map(server => {
-      if (typeof server === 'string') {
-        return { urls: server };
-      }
-      return server;
-    });
+    // const iceServers = data.v.iceServers.map(server => {
+    //   if (typeof server === 'string') {
+    //     return { urls: server };
+    //   }
+    //   return server;
+    // });
 
     return {
-      iceServers: [iceServers],
+      iceServers: [data.v.iceServers],
       iceCandidatePoolSize: 10
     };
   } catch (error) {
