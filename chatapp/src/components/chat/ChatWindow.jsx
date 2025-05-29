@@ -221,15 +221,8 @@ const fetchICEServers = async () => {
     const data = await response.json();
     debugLog('ICE', 'Fetched ICE servers from Xirsys', data.v.iceServers);
     
-    // Ensure iceServers is properly formatted as an array
-    const iceServers = Array.isArray(data.v.iceServers) ? data.v.iceServers : [data.v.iceServers];
-    
     return {
-      iceServers: iceServers.map(server => ({
-        urls: Array.isArray(server.urls) ? server.urls : [server.urls],
-        username: server.username,
-        credential: server.credential
-      })),
+      iceServers: data.v.iceServers,
       iceCandidatePoolSize: 10
     };
   } catch (error) {
@@ -240,7 +233,7 @@ const fetchICEServers = async () => {
         {
           urls: [
             "stun:stun.l.google.com:19302",
-            "stun:stun1.l.google.com:19302"
+            "stun:stun1.l.google.com:19302",
           ]
         }
       ],
