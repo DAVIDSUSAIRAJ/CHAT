@@ -203,7 +203,7 @@ const checkStreamTracks = (stream, context) => {
 };
 
 // Add this near the top of your file
-const getICEServers = () => {
+const getICEServers_fallback = () => {
   return {
     iceServers: [
       {
@@ -239,6 +239,32 @@ const getICEServers = () => {
     iceCandidatePoolSize: 10
   };
 };
+const getIceServers = async () => {
+  try {
+    const response = await fetch("https://global.xirsys.net/_turn/davidChatApp", {
+      method: "PUT",
+      headers: {
+        "Authorization": "Basic " + btoa("Davidsusairaj:eb67096e-3bc1-11f0-a94e-0242ac150003"),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ format: "urls" })
+    });
+
+    if (!response.ok) throw new Error("Failed to get ICE servers");
+    
+    const data = await response.json();
+    const iceServers = data.v.iceServers;
+    const fixedIceServers = Array.isArray(iceServers) ? iceServers : [iceServers];
+    return {
+      iceServers: fixedIceServers,
+      iceCandidatePoolSize: 10
+    };
+  } catch (error) {
+    console.error("Error fetching ICE servers:", error);
+    return getICEServers_fallback(); // fallback to STUN only or empty array
+  }
+};
+
 
 const ChatWindow = forwardRef(({
   selectedUser,
@@ -1199,11 +1225,13 @@ const ChatWindow = forwardRef(({
     };
   }, []);
 
-  const servers = getICEServers();
 
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
+      const servers = await  getIceServers();
+      console.log(servers,"serversDavidONe")
+
       const pc = new RTCPeerConnection(servers);
       console.log(pc,"pcConnetion")
       
