@@ -239,7 +239,8 @@ const getICEServers_fallback = () => {
     iceCandidatePoolSize: 10
   };
 };
-const getIceServers = async () => {
+
+const getICEServers = async () => {
   try {
     const response = await fetch("https://global.xirsys.net/_turn/davidChatApp", {
       method: "PUT",
@@ -253,18 +254,45 @@ const getIceServers = async () => {
     if (!response.ok) throw new Error("Failed to get ICE servers");
     
     const data = await response.json();
-    const iceServers = data.v.iceServers;
-    const fixedIceServers = Array.isArray(iceServers) ? iceServers : [iceServers];
+    let iceServers = data.v.iceServers;
+
+    // Reorder the URLs to prioritize TCP
+    if (iceServers && iceServers[0] && iceServers[0].urls) {
+      iceServers[0].urls = reorderUrls(iceServers[0].urls);
+    }
+
     return {
-      iceServers: fixedIceServers,
+      iceServers,
       iceCandidatePoolSize: 10
     };
   } catch (error) {
     console.error("Error fetching ICE servers:", error);
-    return getICEServers_fallback(); // fallback to STUN only or empty array
+    return getICEServers_fallback();
   }
 };
 
+// Helper function to reorder URLs
+function reorderUrls(urls) {
+  return urls.sort((a, b) => {
+    // Prioritize TURNS (secure TCP)
+    if (a.startsWith('turns:') && !b.startsWith('turns:')) return -1;
+    if (!a.startsWith('turns:') && b.startsWith('turns:')) return 1;
+    
+    // Then regular TCP
+    if (a.includes('tcp') && !b.includes('tcp')) return -1;
+    if (!a.includes('tcp') && b.includes('tcp')) return 1;
+    
+    // Then UDP
+    if (a.includes('udp') && !b.includes('udp')) return -1;
+    if (!a.includes('udp') && b.includes('udp')) return 1;
+    
+    // STUN last
+    if (a.startsWith('stun:') && !b.startsWith('stun:')) return 1;
+    if (!a.startsWith('stun:') && b.startsWith('stun:')) return -1;
+    
+    return 0;
+  });
+}
 
 const ChatWindow = forwardRef(({
   selectedUser,
