@@ -214,42 +214,37 @@ const fetchICEServers = async () => {
       body: JSON.stringify({ format: "urls" })
     });
 
-    if (!response.ok) throw new Error('Failed to fetch ICE servers');
+    if (!response.ok) {
+      throw new Error('Failed to fetch ICE servers');
+    }
 
     const data = await response.json();
-    debugLog('ICE', 'Fetched ICE servers', data.v.iceServers);
-
-    // Combine XIRSYS servers with public STUN servers for redundancy
+    debugLog('ICE', 'Fetched ICE servers from Xirsys', data.v.iceServers);
+    
+    // Ensure iceServers is properly formatted as an array
+    const iceServers = Array.isArray(data.v.iceServers) ? data.v.iceServers : [data.v.iceServers];
+    
     return {
-      iceServers: [
-        ...(data.v.iceServers || []),
-        {
-          urls: [
-            'stun:stun.l.google.com:19302',
-            'stun:stun1.l.google.com:19302',
-            'stun:stun2.l.google.com:19302',
-            'stun:stun3.l.google.com:19302'
-          ]
-        }
-      ],
-      iceCandidatePoolSize: 10,
-      iceTransportPolicy: 'all'
+      iceServers: iceServers.map(server => ({
+        urls: Array.isArray(server.urls) ? server.urls : [server.urls],
+        username: server.username,
+        credential: server.credential
+      })),
+      iceCandidatePoolSize: 10
     };
   } catch (error) {
-    debugLog('ICE', 'Error fetching ICE servers, using fallback', error);
+    debugLog('ICE', 'Error fetching ICE servers', error);
+    // Fallback to public STUN servers if Xirsys fails
     return {
       iceServers: [
         {
           urls: [
-            'stun:stun.l.google.com:19302',
-            'stun:stun1.l.google.com:19302',
-            'stun:stun2.l.google.com:19302',
-            'stun:stun3.l.google.com:19302'
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302"
           ]
         }
       ],
-      iceCandidatePoolSize: 10,
-      iceTransportPolicy: 'all'
+      iceCandidatePoolSize: 10
     };
   }
 };
@@ -1218,131 +1213,185 @@ const ChatWindow = forwardRef(({
       debugLog('PeerConnection', 'Creating new connection');
       const servers = await fetchICEServers();
       const pc = new RTCPeerConnection(servers);
+      console.log(pc,"pcConnetion")
       
-      // Create a buffer for candidates that arrive before remote description
-      const pendingCandidates = [];
-      let remoteDescriptionSet = false;
+      // Buffer for ICE candidates received before remote description is set
+      const iceCandidatesBuffer = [];
+      let hasRemoteDescription = false;
 
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          debugLog('ICE', 'Generated local ICE candidate', event.candidate);
-          sendSignalingMessage({
-            type: "ice-candidate",
-            candidate: event.candidate,
-            from: currentUser.id,
-            to: selectedUser.id,
-          });
-        } else {
-          debugLog('ICE', 'Finished generating ICE candidates');
-        }
-      };
+      // pc.onicecandidate = (event) => {
+      //   if (event.candidate) {
+      //     debugLog('ICE', 'New ICE candidate', event.candidate);
+      //     sendSignalingMessage({
+      //       type: "ice-candidate",
+      //       candidate: event.candidate,
+      //       from: currentUser.id,
+      //       to: selectedUser.id,
+      //     });
+      //   }
+      // };
 
       pc.oniceconnectionstatechange = () => {
-        debugLog('ICE', `ICE connection state changed to: ${pc.iceConnectionState}`);
-        
+        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
         switch(pc.iceConnectionState) {
           case 'checking':
-            debugLog('ICE', 'Checking ICE connection...');
+            debugLog('ICE', 'Connecting...');
             break;
           case 'connected':
-            debugLog('ICE', 'ICE connection established');
-            break;
-          case 'disconnected':
-            debugLog('ICE', 'ICE connection disconnected - attempting recovery');
-            // Try to recover the connection
-            setTimeout(() => {
-              if (pc.iceConnectionState === 'disconnected') {
-                debugLog('ICE', 'Attempting ICE restart');
-                pc.restartIce();
-              }
-            }, 2000);
+            debugLog('ICE', 'Connected');
             break;
           case 'failed':
-            debugLog('ICE', 'ICE connection failed - restarting');
+            debugLog('ICE', 'Connection failed - attempting restart');
             pc.restartIce();
+            break;
+          case 'disconnected':
+            debugLog('ICE', 'Disconnected - checking connection');
+            // Attempt to recover from disconnected state
+            setTimeout(() => {
+              if (pc.iceConnectionState === 'disconnected') {
+                pc.restartIce();
+              }
+            }, 3000);
             break;
         }
       };
 
-      // Add method to handle ICE candidates
-      pc.addIceCandidate = async (candidate) => {
+      // Add method to handle buffered candidates
+      pc.addBufferedCandidates = async () => {
+        if (!hasRemoteDescription) return;
+        
+        debugLog('ICE', `Processing ${iceCandidatesBuffer.length} buffered candidates`);
+        while (iceCandidatesBuffer.length > 0) {
+          const candidate = iceCandidatesBuffer.shift();
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            debugLog('ICE', 'Successfully added buffered candidate');
+          } catch (error) {
+            debugLog('ICE', 'Error adding buffered candidate', error);
+          }
+        }
+      };
+
+      // Add method to handle new ICE candidates
+      pc.handleIceCandidate = async (candidate) => {
         try {
-          if (!remoteDescriptionSet) {
-            debugLog('ICE', 'Queuing ICE candidate until remote description is set');
-            pendingCandidates.push(candidate);
+          if (!hasRemoteDescription) {
+            debugLog('ICE', 'Buffering ICE candidate until remote description is set');
+            iceCandidatesBuffer.push(candidate);
             return;
           }
-          
+
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
           debugLog('ICE', 'Successfully added ICE candidate');
         } catch (error) {
           debugLog('ICE', 'Error adding ICE candidate', error);
-          // Store failed candidate for retry
-          pendingCandidates.push(candidate);
+          // If we get an error, buffer the candidate for retry
+          iceCandidatesBuffer.push(candidate);
         }
       };
 
-      // Enhance remote description setting
-      pc.setRemoteDescription = async (description) => {
+      // Add method to set remote description
+      pc.setRemoteDescriptionAsync = async (description) => {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(description));
-          remoteDescriptionSet = true;
+          hasRemoteDescription = true;
           debugLog('PeerConnection', 'Remote description set successfully');
-          
-          // Process any pending candidates
-          while (pendingCandidates.length > 0) {
-            const candidate = pendingCandidates.shift();
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(candidate));
-              debugLog('ICE', 'Added queued ICE candidate');
-            } catch (error) {
-              debugLog('ICE', 'Error adding queued candidate', error);
-            }
-          }
+          await pc.addBufferedCandidates();
         } catch (error) {
           debugLog('PeerConnection', 'Error setting remote description', error);
           throw error;
         }
       };
 
-      // Enhanced ontrack handler
       pc.ontrack = (event) => {
         debugLog('Track', 'Received remote track', {
           kind: event.track.kind,
           enabled: event.track.enabled,
-          readyState: event.track.readyState
+          readyState: event.track.readyState,
+          muted: event.track.muted
         });
 
         if (event.streams && event.streams[0]) {
           const remoteMediaStream = event.streams[0];
           debugLog('Stream', 'Received remote stream', {
             active: remoteMediaStream.active,
-            id: remoteMediaStream.id
+            id: remoteMediaStream.id,
+            trackCount: remoteMediaStream.getTracks().length
           });
-
-          // Monitor track states
-          event.track.onmute = () => debugLog('Track', 'Track muted');
-          event.track.onunmute = () => debugLog('Track', 'Track unmuted');
-          event.track.onended = () => debugLog('Track', 'Track ended');
-
+          
+          // Log all tracks in the stream
+          remoteMediaStream.getTracks().forEach(track => {
+            debugLog('Stream Track', {
+              kind: track.kind,
+              enabled: track.enabled,
+              readyState: track.readyState,
+              muted: track.muted
+            });
+          });
+          
+          checkStreamTracks(remoteMediaStream, 'Remote Stream');
           setRemoteStream(remoteMediaStream);
+          setPendingRemoteStream(remoteMediaStream);
 
           // Handle audio stream
-          if (event.track.kind === 'audio' && remoteAudioRef.current) {
+          if (remoteAudioRef.current) {
+            debugLog('Audio', 'Setting remote audio');
             remoteAudioRef.current.srcObject = remoteMediaStream;
-          }
-
-          // Handle video stream
-          if (event.track.kind === 'video' && remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteMediaStream;
           }
         }
       };
 
+      pc.onconnectionstatechange = () => {
+        debugLog('PeerConnection', 'Connection state changed', pc.connectionState);
+        switch (pc.connectionState) {
+          case "connected":
+            debugLog('Call', 'Connection established');
+            setCallState("connected");
+            startCallTimer();
+            break;
+          case "disconnected":
+          case "failed":
+            debugLog('Call', 'Connection failed or disconnected');
+            toast.error("Call connection lost");
+            endCall();
+            break;
+          case "closed":
+            debugLog('Call', 'Connection closed');
+            endCall();
+            break;
+        }
+      };
+
+      peerConnectionRef.current = pc;
+      setPeerConnection(pc);
       return pc;
     } catch (error) {
-      debugLog('PeerConnection', 'Error creating peer connection', error);
-      throw error;
+      debugLog('PeerConnection', 'Error creating connection', error);
+      
+      // If the error is related to ICE servers, try one more time with just STUN
+      if (error.message.includes('ICE') || error.message.includes('TURN')) {
+        debugLog('PeerConnection', 'Retrying with STUN servers only');
+        try {
+          const fallbackServers = {
+            iceServers: [
+              {
+                urls: [
+                  "stun:stun.l.google.com:19302",
+                  "stun:stun1.l.google.com:19302"
+                ]
+              }
+            ],
+            iceCandidatePoolSize: 10
+          };
+          const pc = new RTCPeerConnection(fallbackServers);
+          return pc;
+        } catch (fallbackError) {
+          debugLog('PeerConnection', 'Fallback attempt failed', fallbackError);
+        }
+      }
+      
+      toast.error("Failed to create call connection. Please try again.");
+      return null;
     }
   };
 
@@ -1974,60 +2023,6 @@ const ChatWindow = forwardRef(({
   useImperativeHandle(ref, () => ({
     startCall
   }));
-
-  useEffect(() => {
-    if (!peerConnection) return;
-
-    const handleConnectionStateChange = () => {
-      debugLog('Connection', `Connection state changed to: ${peerConnection.connectionState}`);
-      
-      switch (peerConnection.connectionState) {
-        case 'connected':
-          debugLog('Connection', 'Peer connection established');
-          break;
-        case 'disconnected':
-        case 'failed':
-          debugLog('Connection', 'Connection lost or failed');
-          // Try to recover the connection
-          if (peerConnection.iceConnectionState !== 'closed') {
-            debugLog('Connection', 'Attempting to recover connection');
-            peerConnection.restartIce();
-          }
-          break;
-        case 'closed':
-          debugLog('Connection', 'Connection closed');
-          cleanupCall();
-          break;
-      }
-    };
-
-    peerConnection.addEventListener('connectionstatechange', handleConnectionStateChange);
-    
-    return () => {
-      peerConnection.removeEventListener('connectionstatechange', handleConnectionStateChange);
-    };
-  }, [peerConnection]);
-
-  const monitorConnectionQuality = (pc) => {
-    if (!pc) return;
-
-    setInterval(() => {
-      if (pc.getStats) {
-        pc.getStats().then(stats => {
-          stats.forEach(report => {
-            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-              debugLog('Stats', 'Connection Quality', {
-                currentRoundTripTime: report.currentRoundTripTime,
-                availableOutgoingBitrate: report.availableOutgoingBitrate,
-                bytesReceived: report.bytesReceived,
-                bytesSent: report.bytesSent
-              });
-            }
-          });
-        });
-      }
-    }, 3000);
-  };
 
   if (!selectedUser) {
     return (
