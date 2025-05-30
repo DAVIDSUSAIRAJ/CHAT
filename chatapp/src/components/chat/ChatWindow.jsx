@@ -1266,204 +1266,97 @@ const ChatWindow = forwardRef(({
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
-      const iceConfig = await getICEServers();
       
-      // Debug log to check the configuration
-      console.log('ICE Configuration:', JSON.stringify(iceConfig, null, 2));
-
-      // Ensure iceServers is an array
-      if (!Array.isArray(iceConfig.iceServers)) {
-        throw new Error('Invalid ICE server configuration');
-      }
+      // Fetch dynamic TURN credentials from Metered
+      const response = await fetch("https://david_chat_app.metered.live/api/v1/turn/credentials?apiKey=91fdbec556d3f957d022b71fe06a4047747a");
+      const iceServers = await response.json();
+      
+      debugLog('ICE', 'Received ICE servers from Metered:', iceServers);
 
       const pc = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: "stun:stun.relay.metered.ca:80"
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80?transport=tcp",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          },
-          {
-            urls: "turn:global.relay.metered.ca:443",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          },
-          {
-            urls: "turns:global.relay.metered.ca:443?transport=tcp",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          }
-        ],
-        iceCandidatePoolSize: 10
+        iceServers: iceServers,
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceTransportPolicy: 'all', // This will try STUN first, then fallback to TURN
+        sdpSemantics: 'unified-plan'
       });
-      
 
-      console.log(pc,"pcConnetion")
-      
-      // Buffer for ICE candidates received before remote description is set
-      const iceCandidatesBuffer = [];
-      let hasRemoteDescription = false;
-
-      // pc.onicecandidate = (event) => {
-      //   if (event.candidate) {
-      //     debugLog('ICE', 'New ICE candidate', event.candidate);
-      //     sendSignalingMessage({
-      //       type: "ice-candidate",
-      //       candidate: event.candidate,
-      //       from: currentUser.id,
-      //       to: selectedUser.id,
-      //     });
-      //   }
-      // };
-
+      // Add enhanced logging for ICE connection states
       pc.oniceconnectionstatechange = () => {
-        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
+        debugLog('ICE', `ICE connection state changed to: ${pc.iceConnectionState}`);
+        console.log('ICE Connection State:', pc.iceConnectionState);
+        
+        // Handle different ICE connection states
         switch(pc.iceConnectionState) {
           case 'checking':
-            debugLog('ICE', 'Connecting...');
+            toast.info('Establishing connection...');
             break;
           case 'connected':
-            debugLog('ICE', 'Connected');
+            toast.success('Connection established');
             break;
           case 'failed':
-            debugLog('ICE', 'Connection failed - attempting restart');
+            toast.error('Connection failed. Trying to reconnect...');
             pc.restartIce();
             break;
           case 'disconnected':
-            debugLog('ICE', 'Disconnected - checking connection');
-            // Attempt to recover from disconnected state
+            toast.warning('Connection lost. Attempting to recover...');
             setTimeout(() => {
               if (pc.iceConnectionState === 'disconnected') {
                 pc.restartIce();
               }
-            }, 3000);
+            }, 2000);
             break;
         }
       };
 
-      // Add method to handle buffered candidates
-      pc.addBufferedCandidates = async () => {
-        if (!hasRemoteDescription) return;
-        
-        debugLog('ICE', `Processing ${iceCandidatesBuffer.length} buffered candidates`);
-        while (iceCandidatesBuffer.length > 0) {
-          const candidate = iceCandidatesBuffer.shift();
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            debugLog('ICE', 'Successfully added buffered candidate');
-          } catch (error) {
-            debugLog('ICE', 'Error adding buffered candidate', error);
-          }
-        }
+      // Log ICE gathering progress
+      pc.onicegatheringstatechange = () => {
+        debugLog('ICE', `ICE gathering state: ${pc.iceGatheringState}`);
+        console.log('ICE Gathering State:', pc.iceGatheringState);
       };
 
-      // Add method to handle new ICE candidates
-      pc.handleIceCandidate = async (candidate) => {
-        try {
-          if (!hasRemoteDescription) {
-            debugLog('ICE', 'Buffering ICE candidate until remote description is set');
-            iceCandidatesBuffer.push(candidate);
-            return;
-          }
-
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          debugLog('ICE', 'Successfully added ICE candidate');
-        } catch (error) {
-          debugLog('ICE', 'Error adding ICE candidate', error);
-          // If we get an error, buffer the candidate for retry
-          iceCandidatesBuffer.push(candidate);
-        }
-      };
-
-      // Add method to set remote description
-      pc.setRemoteDescriptionAsync = async (description) => {
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(description));
-          hasRemoteDescription = true;
-          debugLog('PeerConnection', 'Remote description set successfully');
-          await pc.addBufferedCandidates();
-        } catch (error) {
-          debugLog('PeerConnection', 'Error setting remote description', error);
-          throw error;
-        }
-      };
-
-      pc.ontrack = (event) => {
-        debugLog('Track', 'Received remote track', {
-          kind: event.track.kind,
-          enabled: event.track.enabled,
-          readyState: event.track.readyState,
-          muted: event.track.muted
-        });
-
-        if (event.streams && event.streams[0]) {
-          const remoteMediaStream = event.streams[0];
-          debugLog('Stream', 'Received remote stream', {
-            active: remoteMediaStream.active,
-            id: remoteMediaStream.id,
-            trackCount: remoteMediaStream.getTracks().length
+      // Enhanced ICE candidate handling
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          debugLog('ICE', 'New ICE candidate', {
+            type: event.candidate.type,
+            protocol: event.candidate.protocol,
+            address: event.candidate.address,
+            port: event.candidate.port,
+            candidate: event.candidate.candidate
           });
-          
-          // Log all tracks in the stream
-          remoteMediaStream.getTracks().forEach(track => {
-            debugLog('Stream Track', {
-              kind: track.kind,
-              enabled: track.enabled,
-              readyState: track.readyState,
-              muted: track.muted
-            });
-          });
-          
-          checkStreamTracks(remoteMediaStream, 'Remote Stream');
-          setRemoteStream(remoteMediaStream);
-          setPendingRemoteStream(remoteMediaStream);
 
-          // Handle audio stream
-          if (remoteAudioRef.current) {
-            debugLog('Audio', 'Setting remote audio');
-            remoteAudioRef.current.srcObject = remoteMediaStream;
-          }
+          // Send the candidate to the remote peer
+          sendSignalingMessage({
+            type: "ice-candidate",
+            candidate: event.candidate,
+            from: currentUser.id,
+            to: selectedUser.id,
+          });
+        } else {
+          debugLog('ICE', 'All ICE candidates gathered');
         }
       };
 
+      // Handle connection failures
       pc.onconnectionstatechange = () => {
-        debugLog('PeerConnection', 'Connection state changed', pc.connectionState);
-        switch (pc.connectionState) {
-          case "connected":
-            debugLog('Call', 'Connection established');
-            setCallState("connected");
-            startCallTimer();
-            break;
-          case "disconnected":
-          case "failed":
-            debugLog('Call', 'Connection failed or disconnected');
-            toast.error("Call connection lost");
-            endCall();
-            break;
-          case "closed":
-            debugLog('Call', 'Connection closed');
-            endCall();
-            break;
+        debugLog('Connection', `Connection state changed to: ${pc.connectionState}`);
+        
+        if (pc.connectionState === 'failed') {
+          // Attempt recovery
+          debugLog('Connection', 'Attempting to recover failed connection');
+          pc.restartIce();
         }
       };
 
-      peerConnectionRef.current = pc;
-      setPeerConnection(pc);
+      debugLog('PeerConnection', 'Peer connection created successfully');
       return pc;
+
     } catch (error) {
-      debugLog('PeerConnection', 'Error creating connection', error);
-      // Use fallback configuration
-      const fallbackConfig = getICEServers_fallback();
-      const pc = new RTCPeerConnection(fallbackConfig);
-      return pc;
+      debugLog('PeerConnection', 'Error creating peer connection', error);
+      toast.error('Failed to create connection. Please try again.');
+      throw error;
     }
   };
 
@@ -1481,6 +1374,13 @@ const ChatWindow = forwardRef(({
 
   const startCall = async (withVideo = false) => {
     try {
+      // Verify TURN server connectivity first
+      const turnAvailable = await verifyTurnServer();
+      if (!turnAvailable) {
+        toast.warning('TURN server connection might be limited. Call quality could be affected.');
+      }
+
+      debugLog('Call', 'Starting call', { withVideo, turnAvailable });
       debugLog('Call', 'Starting call', { withVideo });
       
       // Check available devices first
@@ -2095,6 +1995,45 @@ const ChatWindow = forwardRef(({
   useImperativeHandle(ref, () => ({
     startCall
   }));
+
+  const verifyTurnServer = async () => {
+    try {
+      const response = await fetch("https://david_chat_app.metered.live/api/v1/turn/credentials?apiKey=91fdbec556d3f957d022b71fe06a4047747a");
+      const iceServers = await response.json();
+
+      const pc = new RTCPeerConnection({ iceServers });
+      
+      // Create data channel to trigger ICE gathering
+      pc.createDataChannel('test');
+
+      // Create offer to start ICE gathering
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Wait for ICE gathering to complete or timeout
+      const timeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TURN server timeout')), 5000)
+      );
+
+      const checkIceCandidates = new Promise((resolve) => {
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            if (e.candidate.type === 'relay') {
+              resolve(true);
+            }
+          }
+        };
+      });
+
+      const hasRelay = await Promise.race([checkIceCandidates, timeout])
+        .finally(() => pc.close());
+
+      return hasRelay;
+    } catch (error) {
+      console.error('TURN server verification failed:', error);
+      return false;
+    }
+  };
 
   if (!selectedUser) {
     return (
