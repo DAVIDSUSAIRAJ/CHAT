@@ -1387,6 +1387,7 @@ var pc = new RTCPeerConnection({
           }
 
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log(candidate, "candidate")
           debugLog('ICE', 'Successfully added ICE candidate');
         } catch (error) {
           debugLog('ICE', 'Error adding ICE candidate', error);
