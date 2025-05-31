@@ -1276,35 +1276,46 @@ const ChatWindow = forwardRef(({
         throw new Error('Invalid ICE server configuration');
       }
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: "stun:stun.relay.metered.ca:80"
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80?transport=tcp",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          },
-          {
-            urls: "turn:global.relay.metered.ca:443",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          },
-          {
-            urls: "turns:global.relay.metered.ca:443?transport=tcp",
-            username: "553cdc8b7053ca05f989e7bb",
-            credential: "cTlUjMPhtUte2tox"
-          }
-        ],
-        iceCandidatePoolSize: 10
-      });
+      // const pc = new RTCPeerConnection({
+      //   iceServers: [
+      //     {
+      //       urls: "stun:stun.relay.metered.ca:80"
+      //     },
+      //     {
+      //       urls: "turn:global.relay.metered.ca:80",
+      //       username: "553cdc8b7053ca05f989e7bb",
+      //       credential: "cTlUjMPhtUte2tox"
+      //     },
+      //     {
+      //       urls: "turn:global.relay.metered.ca:80?transport=tcp",
+      //       username: "553cdc8b7053ca05f989e7bb",
+      //       credential: "cTlUjMPhtUte2tox"
+      //     },
+      //     {
+      //       urls: "turn:global.relay.metered.ca:443",
+      //       username: "553cdc8b7053ca05f989e7bb",
+      //       credential: "cTlUjMPhtUte2tox"
+      //     },
+      //     {
+      //       urls: "turns:global.relay.metered.ca:443?transport=tcp",
+      //       username: "553cdc8b7053ca05f989e7bb",
+      //       credential: "cTlUjMPhtUte2tox"
+      //     }
+      //   ],
+      //   iceCandidatePoolSize: 10
+      // });
       
+const response = 
+  await fetch("https://david_chat_app.metered.live/api/v1/turn/credentials?apiKey=91fdbec556d3f957d022b71fe06a4047747a");
+
+// Saving the response in the iceServers array
+const iceServers = await response.json();
+console.log('ICE Servers:David', iceServers);
+// Using the iceServers array in the RTCPeerConnection method
+var pc = new RTCPeerConnection({
+  iceServers: iceServers
+})
+
 
       console.log(pc,"pcConnetion")
       
