@@ -1313,6 +1313,7 @@ const iceServers = await response.json();
 console.log('ICE Servers:David', iceServers);
 // Using the iceServers array in the RTCPeerConnection method
 var pc = new RTCPeerConnection({
+   iceTransportPolicy: "relay", // Force TURN usage
   iceServers: iceServers
 })
 
