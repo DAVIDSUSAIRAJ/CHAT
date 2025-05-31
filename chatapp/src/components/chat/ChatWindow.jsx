@@ -1568,18 +1568,47 @@ var pc = new RTCPeerConnection({
         throw new Error("Failed to create peer connection");
       }
       
-      pc.onicecandidate = (event) => {
-        console.log(event,"eventDavid")
-        if (event.candidate) {
-          debugLog('ICE', 'New ICE candidate', event.candidate);
-          sendSignalingMessage({
-            type: "ice-candidate",
-            candidate: event.candidate,
-            from: currentUser.id,
-            to: selectedUser.id,
-          });
-        }
-      };
+      // pc.onicecandidate = (event) => {
+      //   console.log(event,"eventDavid")
+      //   if (event.candidate) {
+      //     debugLog('ICE', 'New ICE candidate', event.candidate);
+      //     sendSignalingMessage({
+      //       type: "ice-candidate",
+      //       candidate: event.candidate,
+      //       from: currentUser.id,
+      //       to: selectedUser.id,
+      //     });
+      //   }
+      // };
+pc.onicecandidate = (event) => {
+  if (event.candidate) {
+    const candStr = event.candidate.candidate;
+    const typeMatch = candStr.match(/ typ (\w+)/);
+    const raddrMatch = candStr.match(/raddr (\S+)/);
+    const rportMatch = candStr.match(/rport (\d+)/);
+
+    const type = typeMatch ? typeMatch[1] : 'unknown';
+    const raddr = raddrMatch ? raddrMatch[1] : 'N/A';
+    const rport = rportMatch ? rportMatch[1] : 'N/A';
+
+    console.log(`[ICE] Candidate type: ${type}, raddr: ${raddr}, rport: ${rport}`);
+
+    if (type === "relay" && raddr === "0.0.0.0") {
+      console.warn("🚨 Invalid relay candidate (broken TURN allocation)");
+    }
+
+    debugLog('ICE', 'New ICE candidate', event.candidate);
+
+    sendSignalingMessage({
+      type: "ice-candidate",
+      candidate: event.candidate,
+      from: currentUser.id,
+      to: selectedUser.id,
+    });
+  } else {
+    debugLog("ICE", "All ICE candidates sent");
+  }
+};
 
       stream.getTracks().forEach(track => {
         debugLog('PeerConnection', `Adding ${track.kind} track`);
@@ -1860,18 +1889,35 @@ var pc = new RTCPeerConnection({
 
       const pc = await createPeerConnection();
       if (!pc) throw new Error("Failed to create peer connection");
-      pc.onicecandidate = (event) => {
-        console.log(event,"eventDavid")
-        if (event.candidate) {
-          debugLog('ICE', 'New ICE candidate', event.candidate);
-          sendSignalingMessage({
-            type: "ice-candidate",
-            candidate: event.candidate,
-            from: currentUser.id,
-            to: selectedUser.id,
-          });
-        }
-      };
+pc.onicecandidate = (event) => {
+  if (event.candidate) {
+    const candStr = event.candidate.candidate;
+    const typeMatch = candStr.match(/ typ (\w+)/);
+    const addrMatch = candStr.match(/raddr (\S+)/);
+    const rportMatch = candStr.match(/rport (\d+)/);
+
+    const type = typeMatch ? typeMatch[1] : 'unknown';
+    const raddr = addrMatch ? addrMatch[1] : 'N/A';
+    const rport = rportMatch ? rportMatch[1] : 'N/A';
+
+    console.log(`[ICE] Candidate type: ${type}, raddr: ${raddr}, rport: ${rport}`);
+
+    // Check if relay is broken
+    if (type === "relay" && raddr === "0.0.0.0") {
+      console.warn("🚨 Invalid TURN relay candidate: relay points to 0.0.0.0");
+    }
+
+    debugLog('ICE', 'New ICE candidate', event.candidate);
+
+    sendSignalingMessage({
+      type: "ice-candidate",
+      candidate: event.candidate,
+      from: currentUser.id,
+      to: selectedUser.id,
+    });
+  }
+};
+
 
       stream.getTracks().forEach(track => {
         debugLog('PeerConnection', `Adding ${track.kind} track`);
