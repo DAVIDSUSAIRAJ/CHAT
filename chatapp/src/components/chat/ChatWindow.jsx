@@ -1314,7 +1314,10 @@ console.log('ICE Servers:David', iceServers);
 // Using the iceServers array in the RTCPeerConnection method
 var pc = new RTCPeerConnection({
    iceTransportPolicy: "all", 
-  iceServers: iceServers
+  iceServers: iceServers,
+  iceCandidatePoolSize: 10,
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require"
 })
 
 
