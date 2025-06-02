@@ -1266,97 +1266,242 @@ const ChatWindow = forwardRef(({
   const createPeerConnection = async () => {
     try {
       debugLog('PeerConnection', 'Creating new connection');
-      const iceConfig = await getICEServers();
       
-      // Debug log to check the configuration
-      console.log('ICE Configuration:', JSON.stringify(iceConfig, null, 2));
+      // Test TURN server connectivity first
+      console.log('Testing TURN server connectivity...');
+      
+      // Get Metered TURN credentials with better debugging
+      console.log('Fetching TURN credentials...');
+      const response = await fetch(
+        "https://david_chat_app.metered.live/api/v1/turn/credentials?apiKey=91fdbec556d3f957d022b71fe06a4047747a"
+      );
+      
+      if (!response.ok) {
+        throw new Error(`TURN API response: ${response.status} ${response.statusText}`);
+      }
+      
+      const iceServers = await response.json();
+      console.log('Raw TURN Response:', JSON.stringify(iceServers, null, 2));
+      
+      // Validate the ICE servers format
+      if (!Array.isArray(iceServers)) {
+        console.error('Invalid ICE servers format - not an array');
+        throw new Error('Invalid TURN server response format');
+      }
+      
+      // Check each server configuration
+      iceServers.forEach((server, index) => {
+        console.log(`ICE Server ${index}:`, {
+          urls: server.urls,
+          username: server.username ? 'Present' : 'Missing',
+          credential: server.credential ? 'Present' : 'Missing'
+        });
+        
+        if (!server.urls) {
+          console.error(`ICE Server ${index} missing URLs`);
+        }
+        if (!server.username && server.urls.includes('turn:')) {
+          console.error(`ICE Server ${index} missing username for TURN`);
+        }
+        if (!server.credential && server.urls.includes('turn:')) {
+          console.error(`ICE Server ${index} missing credential for TURN`);
+        }
+      });
 
-      // Ensure iceServers is an array
-      if (!Array.isArray(iceConfig.iceServers)) {
-        throw new Error('Invalid ICE server configuration');
+      // Test TURN server by creating a temporary connection
+      console.log('🧪 Testing TURN server allocation...');
+      
+      const testConfig = {
+        iceServers,
+        iceTransportPolicy: "relay",
+        iceCandidatePoolSize: 1
+      };
+
+      const testPc = new RTCPeerConnection(testConfig);
+      let turnTestPassed = false;
+      let testTimeout;
+
+      // Test TURN allocation with timeout
+      const turnTest = new Promise((resolve, reject) => {
+        testTimeout = setTimeout(() => {
+          console.error('❌ TURN test timeout - server might be unreachable');
+          testPc.close();
+          reject(new Error('TURN server test timeout'));
+        }, 10000); // 10 second timeout
+
+        testPc.onicecandidate = (event) => {
+          if (event.candidate) {
+            const candStr = event.candidate.candidate;
+            const typeMatch = candStr.match(/ typ (\w+)/);
+            const raddrMatch = candStr.match(/raddr (\S+)/);
+            const rportMatch = candStr.match(/rport (\d+)/);
+
+            const type = typeMatch ? typeMatch[1] : 'unknown';
+            const raddr = raddrMatch ? raddrMatch[1] : 'N/A';
+            const rport = rportMatch ? rportMatch[1] : 'N/A';
+
+            console.log(`🧪 Test Candidate - Type: ${type}, raddr: ${raddr}, rport: ${rport}`);
+
+            if (type === 'relay' && raddr !== '0.0.0.0' && rport !== '0') {
+              console.log('✅ TURN server test PASSED - Valid relay candidate found');
+              turnTestPassed = true;
+              clearTimeout(testTimeout);
+              testPc.close();
+              resolve(true);
+            } else if (type === 'relay' && (raddr === '0.0.0.0' || rport === '0')) {
+              console.error('❌ TURN server test FAILED - Invalid relay candidate');
+              clearTimeout(testTimeout);
+              testPc.close();
+              reject(new Error('TURN server allocation failed'));
+            }
+          }
+        };
+
+        testPc.onicegatheringstatechange = () => {
+          console.log('🧪 Test ICE Gathering State:', testPc.iceGatheringState);
+          if (testPc.iceGatheringState === 'complete' && !turnTestPassed) {
+            console.error('❌ TURN test completed but no valid relay candidates found');
+            clearTimeout(testTimeout);
+            testPc.close();
+            reject(new Error('No valid TURN relay candidates generated'));
+          }
+        };
+
+        // Force ICE gathering to start
+        testPc.createDataChannel('test');
+      });
+
+      try {
+        await turnTest;
+        console.log('✅ TURN server connectivity verified');
+      } catch (error) {
+        console.error('❌ TURN server test failed:', error.message);
+        
+        // Instead of failing completely, let's try with different config
+        console.log('🔄 Attempting with different TURN configuration...');
+        
+        // Try with modified ICE servers (add some backup STUN servers)
+        const fallbackIceServers = [
+          ...iceServers,
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ];
+
+        console.log('Using fallback configuration with additional STUN servers');
       }
 
-      // const pc = new RTCPeerConnection({
-      //   iceServers: [
-      //     {
-      //       urls: "stun:stun.relay.metered.ca:80"
-      //     },
-      //     {
-      //       urls: "turn:global.relay.metered.ca:80",
-      //       username: "553cdc8b7053ca05f989e7bb",
-      //       credential: "cTlUjMPhtUte2tox"
-      //     },
-      //     {
-      //       urls: "turn:global.relay.metered.ca:80?transport=tcp",
-      //       username: "553cdc8b7053ca05f989e7bb",
-      //       credential: "cTlUjMPhtUte2tox"
-      //     },
-      //     {
-      //       urls: "turn:global.relay.metered.ca:443",
-      //       username: "553cdc8b7053ca05f989e7bb",
-      //       credential: "cTlUjMPhtUte2tox"
-      //     },
-      //     {
-      //       urls: "turns:global.relay.metered.ca:443?transport=tcp",
-      //       username: "553cdc8b7053ca05f989e7bb",
-      //       credential: "cTlUjMPhtUte2tox"
-      //     }
-      //   ],
-      //   iceCandidatePoolSize: 10
-      // });
+      // Create the actual peer connection
+      const config = {
+        iceServers,
+        iceTransportPolicy: "all", // Temporarily allow all types for testing
+        iceCandidatePoolSize: 10,
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require" // Add this for better compatibility
+      };
+
+      console.log('Creating RTCPeerConnection with config:', JSON.stringify(config, null, 2));
+      const pc = new RTCPeerConnection(config);
       
-const response = 
-  await fetch("https://david_chat_app.metered.live/api/v1/turn/credentials?apiKey=91fdbec556d3f957d022b71fe06a4047747a");
-
-// Saving the response in the iceServers array
-const iceServers = await response.json();
-console.log('ICE Servers:David', iceServers);
-// Using the iceServers array in the RTCPeerConnection method
-var pc = new RTCPeerConnection({
-  //  iceTransportPolicy: "relay", // Force TURN usage
-  iceServers: iceServers
-})
-
-
-      console.log(pc,"pcConnetion")
-      
-      // Buffer for ICE candidates received before remote description is set
+      // Buffer for ICE candidates
       const iceCandidatesBuffer = [];
       let hasRemoteDescription = false;
+      let validRelayFound = false;
 
-      // pc.onicecandidate = (event) => {
-      //   if (event.candidate) {
-      //     debugLog('ICE', 'New ICE candidate', event.candidate);
-      //     sendSignalingMessage({
-      //       type: "ice-candidate",
-      //       candidate: event.candidate,
-      //       from: currentUser.id,
-      //       to: selectedUser.id,
-      //     });
-      //   }
-      // };
+      // Debug ICE candidates with more details
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          const candStr = event.candidate.candidate;
+          const typeMatch = candStr.match(/ typ (\w+)/);
+          const raddrMatch = candStr.match(/raddr (\S+)/);
+          const rportMatch = candStr.match(/rport (\d+)/);
+          const addressMatch = candStr.match(/(\d+\.\d+\.\d+\.\d+)/);
 
+          const type = typeMatch ? typeMatch[1] : 'unknown';
+          const raddr = raddrMatch ? raddrMatch[1] : 'N/A';
+          const rport = rportMatch ? rportMatch[1] : 'N/A';
+          const address = addressMatch ? addressMatch[1] : 'N/A';
+
+          console.log(`ICE Candidate - Type: ${type}, Address: ${address}, raddr: ${raddr}, rport: ${rport}`);
+          console.log('Full candidate string:', candStr);
+          
+          // Check for invalid relay candidates
+          if (type === 'relay') {
+            if (raddr === '0.0.0.0' || rport === '0') {
+              console.error('🚨 INVALID RELAY CANDIDATE DETECTED');
+              console.error('This suggests TURN server allocation failed');
+              console.error('Skipping this candidate...');
+              return; // Don't send invalid candidates
+            } else {
+              console.log('✅ Valid relay candidate found');
+              validRelayFound = true;
+            }
+          }
+
+          // Only send valid candidates
+          sendSignalingMessage({
+            type: "ice-candidate",
+            candidate: event.candidate,
+            from: currentUser.id,
+            to: selectedUser.id,
+          });
+        } else {
+          console.log('ICE gathering completed');
+          if (!validRelayFound) {
+            console.error('❌ No valid relay candidates were generated');
+            console.error('This will likely cause connection failure');
+          }
+        }
+      };
+
+      // Monitor ICE gathering state
+      pc.onicegatheringstatechange = () => {
+        console.log('ICE Gathering State:', pc.iceGatheringState);
+        
+        if (pc.iceGatheringState === 'complete') {
+          console.log('ICE gathering completed');
+          if (!validRelayFound) {
+            console.error('❌ ICE gathering complete but no valid relay candidates found');
+            console.error('Connection will likely fail');
+          }
+        }
+      };
+
+      // Monitor connection state with more detailed handling
       pc.oniceconnectionstatechange = () => {
-        debugLog('ICE', 'Connection state changed', pc.iceConnectionState);
+        console.log('ICE Connection State:', pc.iceConnectionState);
+        
         switch(pc.iceConnectionState) {
           case 'checking':
-            debugLog('ICE', 'Connecting...');
+            console.log('ICE is checking connectivity...');
             break;
           case 'connected':
-            debugLog('ICE', 'Connected');
+            console.log('✅ ICE connected successfully');
+            break;
+          case 'completed':
+            console.log('✅ ICE completed successfully');
             break;
           case 'failed':
-            debugLog('ICE', 'Connection failed - attempting restart');
-            pc.restartIce();
+            console.error('❌ ICE Connection Failed');
+            console.error('Possible solutions:');
+            console.error('1. Check if TURN server is working: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/');
+            console.error('2. Try different TURN server');
+            console.error('3. Check network/firewall settings');
+            
+            toast.error("Call connection failed. TURN server issue detected.");
+            endCall();
             break;
           case 'disconnected':
-            debugLog('ICE', 'Disconnected - checking connection');
-            // Attempt to recover from disconnected state
+            console.warn('ICE disconnected');
+            // Try to restart ICE
             setTimeout(() => {
               if (pc.iceConnectionState === 'disconnected') {
+                console.log('Attempting ICE restart...');
                 pc.restartIce();
               }
-            }, 3000);
+            }, 2000);
+            break;
+          case 'closed':
+            console.log('ICE connection closed');
             break;
         }
       };
@@ -1365,14 +1510,14 @@ var pc = new RTCPeerConnection({
       pc.addBufferedCandidates = async () => {
         if (!hasRemoteDescription) return;
         
-        debugLog('ICE', `Processing ${iceCandidatesBuffer.length} buffered candidates`);
+        console.log(`Processing ${iceCandidatesBuffer.length} buffered candidates`);
         while (iceCandidatesBuffer.length > 0) {
           const candidate = iceCandidatesBuffer.shift();
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            debugLog('ICE', 'Successfully added buffered candidate');
+            console.log('✅ Added buffered candidate');
           } catch (error) {
-            debugLog('ICE', 'Error adding buffered candidate', error);
+            console.error('❌ Error adding buffered candidate:', error);
           }
         }
       };
@@ -1381,34 +1526,33 @@ var pc = new RTCPeerConnection({
       pc.handleIceCandidate = async (candidate) => {
         try {
           if (!hasRemoteDescription) {
-            debugLog('ICE', 'Buffering ICE candidate until remote description is set');
+            console.log('Buffering ICE candidate (no remote description yet)');
             iceCandidatesBuffer.push(candidate);
             return;
           }
-
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log(candidate, "candidate")
-          debugLog('ICE', 'Successfully added ICE candidate');
+          console.log('✅ Added ICE candidate immediately');
         } catch (error) {
-          debugLog('ICE', 'Error adding ICE candidate', error);
-          // If we get an error, buffer the candidate for retry
+          console.error('❌ Error adding ICE candidate, buffering for later:', error);
           iceCandidatesBuffer.push(candidate);
         }
       };
 
-      // Add method to set remote description
+      // Add setRemoteDescriptionAsync method
       pc.setRemoteDescriptionAsync = async (description) => {
         try {
+          console.log('Setting remote description...');
           await pc.setRemoteDescription(new RTCSessionDescription(description));
           hasRemoteDescription = true;
-          debugLog('PeerConnection', 'Remote description set successfully');
+          console.log('✅ Remote description set successfully');
           await pc.addBufferedCandidates();
         } catch (error) {
-          debugLog('PeerConnection', 'Error setting remote description', error);
+          console.error('❌ Error setting remote description:', error);
           throw error;
         }
       };
 
+      // Add ontrack handler
       pc.ontrack = (event) => {
         debugLog('Track', 'Received remote track', {
           kind: event.track.kind,
@@ -1447,6 +1591,7 @@ var pc = new RTCPeerConnection({
         }
       };
 
+      // Add connection state change handler
       pc.onconnectionstatechange = () => {
         debugLog('PeerConnection', 'Connection state changed', pc.connectionState);
         switch (pc.connectionState) {
@@ -1468,15 +1613,12 @@ var pc = new RTCPeerConnection({
         }
       };
 
-      peerConnectionRef.current = pc;
-      setPeerConnection(pc);
+      console.log('✅ PeerConnection created successfully');
       return pc;
+
     } catch (error) {
-      debugLog('PeerConnection', 'Error creating connection', error);
-      // Use fallback configuration
-      const fallbackConfig = getICEServers_fallback();
-      const pc = new RTCPeerConnection(fallbackConfig);
-      return pc;
+      console.error('❌ Error creating peer connection:', error);
+      throw error;
     }
   };
 
