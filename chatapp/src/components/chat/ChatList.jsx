@@ -5,23 +5,6 @@ import { supabase, createRealtimeChannel } from '../../lib/supabaseClient';
 // Maximum time in milliseconds before considering a user offline (3 minutes)
 const PRESENCE_TIMEOUT = 3 * 60 * 1000;
 
-// Debounce helper function
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
-
 // Polling function for user statuses
 const setupUserStatusPolling = async (currentUser, setOnlineStatus, setUsers) => {
   // Polling interval for user statuses (every 5 seconds)
@@ -82,7 +65,6 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [onlineStatus, setOnlineStatus] = useState({});
-  const [filteredUsers, setFilteredUsers] = useState([]);
   const menuRef = useRef(null);
   const subscriptionRef = useRef(null);
   const presenceChannelRef = useRef(null);
@@ -90,9 +72,6 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const checkInactiveIntervalRef = useRef(null);
   const statusPollingIntervalRef = useRef(null);
   const navigate = useNavigate();
-
-  // Debounce search query
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -481,20 +460,11 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
     }
   };
 
-  // Update filtered users when search query changes
-  useEffect(() => {
-    if (!debouncedSearchQuery) {
-      setFilteredUsers(users);
-      return;
-    }
-
-    const searchLower = debouncedSearchQuery.toLowerCase();
-    const filtered = users.filter(user => 
-      user.username.toLowerCase().includes(searchLower) ||
-      user.email.toLowerCase().includes(searchLower)
-    );
-    setFilteredUsers(filtered);
-  }, [debouncedSearchQuery, users]);
+  // Filter users based on search query
+  const filteredUsers = users.filter(user => 
+    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="chat-list">
