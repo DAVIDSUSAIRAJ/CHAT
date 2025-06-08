@@ -74,27 +74,34 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const statusPollingIntervalRef = useRef(null);
   const navigate = useNavigate();
 
-  // Update filtered users when users array changes
+  // Update filtered users whenever users or searchQuery changes
   useEffect(() => {
-    setFilteredUsersList(users);
-  }, [users]);
-
-  // Handle search
-  const handleSearch = (e) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    
-    if (!query.trim()) {
+    if (!searchQuery.trim()) {
       setFilteredUsersList(users);
       return;
     }
 
-    const searchLower = query.toLowerCase();
-    const filtered = users.filter(user => 
-      user.username.toLowerCase().includes(searchLower) ||
-      user.email.toLowerCase().includes(searchLower)
+    const searchLower = searchQuery.toLowerCase();
+    const results = users.filter(user => {
+      try {
+        return (
+          user?.username?.toLowerCase().includes(searchLower) ||
+          user?.email?.toLowerCase().includes(searchLower)
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    setFilteredUsersList(results);
+  }, [searchQuery, users]);
+
+  // Very simple filter function
+  const getFilteredUsers = () => {
+    if (!searchQuery) return users;
+    return users.filter(u => 
+      u.username.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    setFilteredUsersList(filtered);
   };
 
   useEffect(() => {
@@ -526,7 +533,7 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
             type="text"
             placeholder="Search users.."
             value={searchQuery}
-            onChange={handleSearch}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
           <span className="search-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -538,10 +545,10 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
       </div>
 
       <div className="user-list">
-        {filteredUsersList.length === 0 && (
+        {getFilteredUsers().length === 0 && (
           <div className="no-friends">No users found</div>
         )}
-        {filteredUsersList.map((user) => (
+        {getFilteredUsers().map((user) => (
           <div
             key={user.id}
             onClick={() => onSelectUser(user)}
