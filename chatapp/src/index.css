@@ -765,14 +765,10 @@ body {
 
   .mobile-search {
     position: relative;
-    width: 32px;
-    transition: all 0.3s ease;
+    width: 100%;
+    max-width: 180px;
     margin-left: 0.25rem;
-  }
-
-  .mobile-search.active,
-  .mobile-search .search-input:focus {
-    width: 180px;
+    transform: translateZ(0); /* Hardware acceleration */
   }
 
   .mobile-search .search-icon {
@@ -785,47 +781,43 @@ body {
     align-items: center;
     cursor: pointer;
     z-index: 2;
+    will-change: transform; /* Optimize animations */
   }
 
   .mobile-search .search-input {
-    width: 32px;
-    padding: 6px;
-    padding-left: 32px;
+    width: 100%;
+    padding: 6px 32px 6px 32px;
     border: 1px solid #e2e8f0;
     border-radius: 16px;
     font-size: 0.875rem;
     background: #f8f9fa;
-    transition: all 0.3s ease;
-    cursor: pointer;
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
+    transition: background-color 0.3s ease;
+    -webkit-appearance: none; /* Remove default iOS styling */
+    appearance: none;
   }
 
   .mobile-search .search-input:focus {
-    width: 180px;
     background: white;
     border-color: #1a75ff;
-    cursor: text;
     box-shadow: 0 0 0 2px rgba(26, 117, 255, 0.1);
-    padding-right: 12px;
   }
 
   .mobile-search .search-input::placeholder {
-    color: transparent;
-  }
-
-  .mobile-search .search-input:focus::placeholder {
     color: #94a3b8;
   }
 
   .mobile-search .clear-search {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: none;
-    padding: 0;
+    padding: 4px;
     color: #94a3b8;
     cursor: pointer;
+    z-index: 2;
+    will-change: transform; /* Optimize animations */
   }
 
   /* Adjust chat window container for mobile */
