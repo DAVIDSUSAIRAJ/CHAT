@@ -38,33 +38,28 @@ const ChatHeader = ({ user }) => {
         </div>
         <div>
           <h2 className="font-semibold text-gray-800">{user?.name || 'User'}</h2>
-          <p className="text-sm text-green-500">
-            {user?.status === 'online' ? 'Online' : `Last seen ${user?.lastSeen || 'recently'}`}
+          <p className={`text-sm ${user?.status === 'online' ? 'text-green-500' : 'text-gray-500'}`}>
+            {user?.status === 'online' ? 'Online' : 'Offline'}
           </p>
         </div>
       </div>
 
       {/* Right side - Actions */}
       <div className="flex items-center space-x-4">
-        <button 
-          className={`p-2 hover:bg-gray-100 rounded-full transition-colors ${isInCall ? 'bg-blue-100' : ''}`}
+        <button
           onClick={handleVideoCall}
-          title="Start video call"
+          className="p-2 text-gray-600 hover:text-blue-500 transition-colors"
         >
-          <BsCameraVideo className={`w-5 h-5 ${isInCall ? 'text-blue-600' : 'text-gray-600'}`} />
+          <BsCameraVideo size={20} />
         </button>
-        <button 
-          className={`p-2 hover:bg-gray-100 rounded-full transition-colors ${isInCall ? 'bg-blue-100' : ''}`}
+        <button
           onClick={handleAudioCall}
-          title="Start audio call"
+          className="p-2 text-gray-600 hover:text-blue-500 transition-colors"
         >
-          <BsTelephone className={`w-5 h-5 ${isInCall ? 'text-blue-600' : 'text-gray-600'}`} />
+          <BsTelephone size={20} />
         </button>
-        <button 
-          className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-          title="Search messages"
-        >
-          <IoSearch className="w-5 h-5 text-gray-600" />
+        <button className="p-2 text-gray-600 hover:text-blue-500 transition-colors">
+          <IoSearch size={20} />
         </button>
       </div>
     </div>
