@@ -65,6 +65,8 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [onlineStatus, setOnlineStatus] = useState({});
+  const [debugMessage, setDebugMessage] = useState('');
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
   const menuRef = useRef(null);
   const subscriptionRef = useRef(null);
   const presenceChannelRef = useRef(null);
@@ -72,6 +74,40 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const checkInactiveIntervalRef = useRef(null);
   const statusPollingIntervalRef = useRef(null);
   const navigate = useNavigate();
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      console.log('Device detection:', { 
+        isMobile,
+        userAgent: navigator.userAgent,
+        width: window.innerWidth
+      });
+      setIsMobileDevice(isMobile);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Handle search input change with debugging
+  const handleSearchChange = (e) => {
+    try {
+      const value = e.target.value;
+      console.log('Search input event:', {
+        value,
+        type: e.type,
+        isMobile: isMobileDevice,
+        target: e.target.tagName,
+        inputType: e.nativeEvent?.inputType
+      });
+      setSearchQuery(value);
+    } catch (err) {
+      console.error('Search input error:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -461,13 +497,50 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   };
 
   // Filter users based on search query
-  const filteredUsers = users.filter(user => 
-    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter(user => {
+    try {
+      // Debug message
+      const debugInfo = {
+        hasUser: !!user,
+        hasUsername: !!user?.username,
+        hasEmail: !!user?.email,
+        searchQuery
+      };
+      setDebugMessage(JSON.stringify(debugInfo, null, 2));
+
+      if (!user || !user.username || !user.email) {
+        return false;
+      }
+
+      return user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+             user.email.toLowerCase().includes(searchQuery.toLowerCase());
+    } catch (err) {
+      setDebugMessage(`Error: ${err.message}`);
+      return false;
+    }
+  });
 
   return (
     <div className="chat-list">
+      {/* Add debug display */}
+      {debugMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: 10,
+          left: 10,
+          right: 10,
+          background: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: 10,
+          borderRadius: 5,
+          fontSize: '12px',
+          zIndex: 9999,
+          whiteSpace: 'pre-wrap'
+        }}>
+          Debug Info: {debugMessage}
+        </div>
+      )}
+      
       <div className="chat-list-header">
         <div className="header-content">
           <h2>All Users</h2>
@@ -559,4 +632,4 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   );
 };
 
-export default ChatList; 
+export default ChatList;
