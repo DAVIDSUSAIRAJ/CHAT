@@ -65,6 +65,7 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [onlineStatus, setOnlineStatus] = useState({});
+  const [filteredUsersList, setFilteredUsersList] = useState([]);
   const menuRef = useRef(null);
   const subscriptionRef = useRef(null);
   const presenceChannelRef = useRef(null);
@@ -72,6 +73,29 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const checkInactiveIntervalRef = useRef(null);
   const statusPollingIntervalRef = useRef(null);
   const navigate = useNavigate();
+
+  // Update filtered users when users array changes
+  useEffect(() => {
+    setFilteredUsersList(users);
+  }, [users]);
+
+  // Handle search
+  const handleSearch = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    if (!query.trim()) {
+      setFilteredUsersList(users);
+      return;
+    }
+
+    const searchLower = query.toLowerCase();
+    const filtered = users.filter(user => 
+      user.username.toLowerCase().includes(searchLower) ||
+      user.email.toLowerCase().includes(searchLower)
+    );
+    setFilteredUsersList(filtered);
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -460,12 +484,6 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
     }
   };
 
-  // Filter users based on search query
-  const filteredUsers = users.filter(user => 
-    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
     <div className="chat-list">
       <div className="chat-list-header">
@@ -508,7 +526,7 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
             type="text"
             placeholder="Search users.."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearch}
           />
           <span className="search-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -520,10 +538,10 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
       </div>
 
       <div className="user-list">
-        {filteredUsers.length === 0 && (
+        {filteredUsersList.length === 0 && (
           <div className="no-friends">No users found</div>
         )}
-        {filteredUsers.map((user) => (
+        {filteredUsersList.map((user) => (
           <div
             key={user.id}
             onClick={() => onSelectUser(user)}
