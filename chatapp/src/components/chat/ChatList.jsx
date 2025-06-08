@@ -11,6 +11,18 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
   const subscriptionRef = useRef(null);
   const navigate = useNavigate();
 
+  // Function to sort users - online first, then alphabetically
+  const sortUsers = (users) => {
+    return users.sort((a, b) => {
+      // First compare online status
+      if (a.status === 'online' && b.status !== 'online') return -1;
+      if (a.status !== 'online' && b.status === 'online') return 1;
+      
+      // If same status, sort by username
+      return a.username.localeCompare(b.username);
+    });
+  };
+
   // Fetch users and setup real-time subscription
   useEffect(() => {
     let isSubscribed = true;
@@ -51,7 +63,7 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
                 .map(user => [user.id, user])
             ).values()
           );
-          setUsers(uniqueUsers);
+          setUsers(sortUsers(uniqueUsers)); // Sort users before setting
         }
 
         // Setup broadcast channel for status updates
@@ -95,7 +107,8 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
                           // Double check to prevent race conditions and current user
                           const currentMap = new Map(current.map(u => [u.id, u]));
                           if (!currentMap.has(newUser.id) && newUser.id !== user.id) {
-                            return [...current, newUser];
+                            // Sort after adding new user
+                            return sortUsers([...current, newUser]);
                           }
                           return current;
                         });
@@ -108,7 +121,8 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
                 if (usersMap.has(userId)) {
                   usersMap.set(userId, { ...usersMap.get(userId), status });
                 }
-                return Array.from(usersMap.values());
+                // Sort users after status update
+                return sortUsers(Array.from(usersMap.values()));
               });
             }
           )
@@ -157,9 +171,11 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
                   }
                 }
 
-                // Convert Map back to array, ensuring current user is filtered out
-                return Array.from(usersMap.values())
-                  .filter(u => u.id !== user.id);
+                // Convert Map back to array, filter current user, and sort
+                return sortUsers(
+                  Array.from(usersMap.values())
+                    .filter(u => u.id !== user.id)
+                );
               });
             }
           )
