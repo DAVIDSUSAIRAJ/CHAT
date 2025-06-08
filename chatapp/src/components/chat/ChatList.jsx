@@ -1,245 +1,213 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, createRealtimeChannel } from '../../lib/supabaseClient';
-
-// Maximum time in milliseconds before considering a user offline (3 minutes)
-const PRESENCE_TIMEOUT = 3 * 60 * 1000;
-
-// Polling function for user statuses
-const setupUserStatusPolling = async (currentUser, setOnlineStatus, setUsers) => {
-  // Polling interval for user statuses (every 5 seconds)
-  const POLL_INTERVAL = 5000;
-  
-  // Only run this in production (in dev we use WebSockets)
-  if (process.env.NODE_ENV !== 'production') return null;
-  
-  console.log("📊 Setting up user status polling");
-  
-  // Function to poll for user status updates
-  const pollUserStatuses = async () => {
-    try {
-      // Get all users
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, username, status, last_seen')
-        .neq('id', currentUser.id);
-        
-      if (error) {
-        console.error("Error polling user statuses:", error);
-        return;
-      }
-      
-      if (data) {
-        // Update local state with latest statuses
-        const statusMap = {};
-        data.forEach(user => {
-          statusMap[user.id] = {
-            status: user.status || 'offline',
-            lastSeen: user.last_seen
-          };
-        });
-        
-        setOnlineStatus(statusMap);
-        
-        // Also update the users list
-        setUsers(data);
-      }
-    } catch (error) {
-      console.error("Error in user status polling:", error);
-    }
-  };
-  
-  // Start polling immediately
-  pollUserStatuses();
-  
-  // Set up interval for continuous polling
-  const interval = setInterval(pollUserStatuses, POLL_INTERVAL);
-  
-  // Return function to clean up interval
-  return () => clearInterval(interval);
-};
+import { supabase } from '../../lib/supabaseClient';
 
 const ChatList = ({ onSelectUser, selectedUserId }) => {
   const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showMenu, setShowMenu] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [onlineStatus, setOnlineStatus] = useState({});
-  const [filteredUsersList, setFilteredUsersList] = useState([]);
   const menuRef = useRef(null);
   const subscriptionRef = useRef(null);
-  const presenceChannelRef = useRef(null);
-  const heartbeatIntervalRef = useRef(null);
-  const checkInactiveIntervalRef = useRef(null);
-  const statusPollingIntervalRef = useRef(null);
   const navigate = useNavigate();
 
-  // Update filtered users whenever users or searchQuery changes
+  // Fetch users and setup real-time subscription
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredUsersList(users);
-      return;
-    }
+    let isSubscribed = true;
 
-    const searchLower = searchQuery.toLowerCase();
-    const results = users.filter(user => {
-      try {
-        return (
-          user?.username?.toLowerCase().includes(searchLower) ||
-          user?.email?.toLowerCase().includes(searchLower)
-        );
-      } catch {
-        return false;
-      }
-    });
-
-    setFilteredUsersList(results);
-  }, [searchQuery, users]);
-
-  // Very simple filter function
-  const getFilteredUsers = () => {
-    if (!searchQuery) return users;
-    return users.filter(u => 
-      u.username.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  };
-
-  useEffect(() => {
     const fetchUsers = async () => {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      setCurrentUser(currentUser);
+      console.log('Fetching users...');
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('Current user:', user);
+      setCurrentUser(user);
       
-      if (currentUser) {
+      if (user) {
+        // First set own status to online
+        console.log('Setting status to online...');
+        const { error: statusError } = await supabase
+          .from('users')
+          .update({ status: 'online' })
+          .eq('id', user.id);
+
+        if (statusError) {
+          console.error('Error updating own status:', statusError);
+        }
+
         // Fetch all users except current user
+        console.log('Fetching other users...');
         const { data, error } = await supabase
           .from('users')
           .select('id, username, email, avatar_url, status')
-          .neq('id', currentUser.id);
+          .neq('id', user.id);
 
         if (data && !error) {
-          setUsers(data);
-          
-          // Initialize online status from database
-          const statusMap = {};
-          data.forEach(user => {
-            statusMap[user.id] = user.status || 'offline';
-          });
-          setOnlineStatus(statusMap);
+          console.log('Initial users data:', data);
+          // Ensure no duplicates in initial data and filter out current user
+          const uniqueUsers = Array.from(
+            new Map(
+              data
+                .filter(u => u.id !== user.id) // Filter out current user
+                .map(user => [user.id, user])
+            ).values()
+          );
+          setUsers(uniqueUsers);
         }
-        
-        // Set user's own status to online
-        await supabase
-          .from('users')
-          .update({ status: 'online' })
-          .eq('id', currentUser.id);
 
-        // Setup real-time subscription for users table
-        try {
-          const channel = await createRealtimeChannel('public:users');
-          
-          if (!channel) {
-            console.warn('Failed to create users channel');
-            return;
-          }
-          
-          channel.on(
+        // Setup broadcast channel for status updates
+        console.log('Setting up broadcast channel...');
+        const broadcastChannel = supabase
+          .channel('status_updates')
+          .on(
+            'broadcast',
+            { event: 'status_change' },
+            (payload) => {
+              console.log('Received broadcast:', payload);
+              
+              if (!isSubscribed) return;
+              
+              const { userId, status } = payload.payload;
+              console.log('Status update for user:', userId, status);
+
+              // Skip if it's the current user
+              if (userId === user.id) {
+                console.log('Skipping current user update');
+                return;
+              }
+
+              // Update users list with new status
+              setUsers(prevUsers => {
+                // Create a Map of current users for easy lookup and duplicate prevention
+                const usersMap = new Map(prevUsers.map(u => [u.id, u]));
+                
+                // If user doesn't exist and it's not the current user, fetch their details
+                if (!usersMap.has(userId) && userId !== user.id) {
+                  console.log('New user detected, fetching details...');
+                  supabase
+                    .from('users')
+                    .select('id, username, email, avatar_url, status')
+                    .eq('id', userId)
+                    .single()
+                    .then(({ data: newUser, error }) => {
+                      if (!error && newUser && newUser.id !== user.id) {
+                        console.log('Adding new user:', newUser);
+                        setUsers(current => {
+                          // Double check to prevent race conditions and current user
+                          const currentMap = new Map(current.map(u => [u.id, u]));
+                          if (!currentMap.has(newUser.id) && newUser.id !== user.id) {
+                            return [...current, newUser];
+                          }
+                          return current;
+                        });
+                      }
+                    });
+                  return prevUsers;
+                }
+                
+                // Update existing user's status
+                if (usersMap.has(userId)) {
+                  usersMap.set(userId, { ...usersMap.get(userId), status });
+                }
+                return Array.from(usersMap.values());
+              });
+            }
+          )
+          .subscribe((status) => {
+            console.log('Broadcast subscription status:', status);
+          });
+
+        // Also listen for database changes
+        console.log('Setting up database listener...');
+        const dbChannel = supabase
+          .channel('db_changes')
+          .on(
             'postgres_changes',
             {
-              event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
+              event: '*',
               schema: 'public',
               table: 'users'
             },
             async (payload) => {
-              if (payload.new && payload.new.id && payload.new.status) {
-                // Update local status state
-                setOnlineStatus(prev => ({
-                  ...prev,
-                  [payload.new.id]: payload.new.status
-                }));
-                
-                // Refetch the entire users list when any change occurs
-                const { data, error } = await supabase
-                  .from('users')
-                  .select('id, username, email, avatar_url, status')
-                  .neq('id', currentUser.id);
+              console.log('Database change:', payload);
+              
+              if (!isSubscribed) return;
 
-                if (data && !error) {
-                  setUsers(data);
-                }
+              // Skip if it's the current user
+              if (payload.new && payload.new.id === user.id) {
+                console.log('Skipping current user database update');
+                return;
               }
+
+              setUsers(prevUsers => {
+                // Create a Map of current users
+                const usersMap = new Map(prevUsers.map(u => [u.id, u]));
+
+                // For INSERT events, add the new user if not exists and not current user
+                if (payload.eventType === 'INSERT' && payload.new.id !== user.id) {
+                  console.log('New user inserted:', payload.new);
+                  if (!usersMap.has(payload.new.id)) {
+                    usersMap.set(payload.new.id, payload.new);
+                  }
+                }
+                // For UPDATE events, update the user if not current user
+                else if (payload.eventType === 'UPDATE' && payload.new.id !== user.id) {
+                  console.log('User updated:', payload.new);
+                  if (usersMap.has(payload.new.id)) {
+                    usersMap.set(payload.new.id, { ...usersMap.get(payload.new.id), ...payload.new });
+                  }
+                }
+
+                // Convert Map back to array, ensuring current user is filtered out
+                return Array.from(usersMap.values())
+                  .filter(u => u.id !== user.id);
+              });
             }
           )
-          .subscribe((status) => {
-            console.log(`Users subscription status: ${status}`);
-          });
+          .subscribe();
 
-          subscriptionRef.current = channel;
-        } catch (error) {
-          console.error('Error setting up users channel:', error);
-        }
+        // When setting status to online, broadcast to all clients
+        const channel = supabase.channel('status_updates');
+        channel.send({
+          type: 'broadcast',
+          event: 'status_change',
+          payload: {
+            userId: user.id,
+            status: 'online'
+          }
+        });
+
+        // Save subscription references for cleanup
+        subscriptionRef.current = {
+          broadcast: broadcastChannel,
+          db: dbChannel
+        };
       }
     };
 
     fetchUsers();
 
-    // Close menu when clicking outside
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setShowMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-
-    // Handle tab visibility change
-    const handleVisibilityChange = async () => {
-      if (!currentUser) return;
-      
-      const status = document.visibilityState === 'visible' ? 'online' : 'offline';
-      await updateUserStatus(currentUser.id, status);
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Cleanup subscription on component unmount
+    // Cleanup subscription on unmount
     return () => {
+      console.log('Cleaning up subscriptions...');
+      isSubscribed = false;
       if (subscriptionRef.current) {
-        try {
-          subscriptionRef.current.unsubscribe();
-        } catch (err) {
-          console.error('Error during user subscription cleanup:', err);
+        if (subscriptionRef.current.broadcast) {
+          supabase.removeChannel(subscriptionRef.current.broadcast);
+        }
+        if (subscriptionRef.current.db) {
+          supabase.removeChannel(subscriptionRef.current.db);
         }
       }
-      
-      // Set user status to offline when component unmounts
-      if (currentUser) {
-        supabase
-          .from('users')
-          .update({ status: 'offline' })
-          .eq('id', currentUser.id);
-      }
-      
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
-  // Helper function to update user status
-  const updateUserStatus = async (userId, status) => {
-    try {
-      await supabase
-        .from('users')
-        .update({ status })
-        .eq('id', userId);
-        
-      // Update local state
-      setOnlineStatus(prev => ({
-        ...prev,
-        [userId]: status
-      }));
-    } catch (error) {
-      console.error('Error updating user status:', error);
-    }
+  // Filter users based on search
+  const getFilteredUsers = () => {
+    if (!searchQuery) return users;
+    const searchLower = searchQuery.toLowerCase();
+    return users.filter(u => 
+      u.username.toLowerCase().includes(searchLower)
+    );
   };
 
   // Handle profile navigation
@@ -248,20 +216,47 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
     navigate('/profile');
   };
 
-  // Handle logout
+  // Handle logout with broadcast
   const handleLogout = async () => {
     setShowMenu(false);
     
-    // Update status to offline before signing out
     if (currentUser) {
-      await updateUserStatus(currentUser.id, 'offline');
-    }
-    
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Error signing out:', error);
-    } else {
-      window.location.href = '/';
+      try {
+        // Broadcast offline status
+        const channel = supabase.channel('status_updates');
+        channel.send({
+          type: 'broadcast',
+          event: 'status_change',
+          payload: {
+            userId: currentUser.id,
+            status: 'offline'
+          }
+        });
+
+        // Update database
+        const { error: statusError } = await supabase
+          .from('users')
+          .update({ status: 'offline' })
+          .eq('id', currentUser.id);
+
+        if (statusError) {
+          console.error('Error updating status:', statusError);
+          return;
+        }
+
+        // Wait a moment for the status update to propagate
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Then sign out
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (!signOutError) {
+          navigate('/');
+        } else {
+          console.error('Error signing out:', signOutError);
+        }
+      } catch (error) {
+        console.error('Error during logout:', error);
+      }
     }
   };
 
@@ -341,12 +336,12 @@ const ChatList = ({ onSelectUser, selectedUserId }) => {
                   {user.username?.[0]?.toUpperCase()}
                 </div>
               )}
-              <span className={`status-indicator ${onlineStatus[user.id] || user.status || 'offline'}`}></span>
+              <span className={`status-indicator ${user.status || 'offline'}`}></span>
             </div>
             <div className="user-info">
               <h3 className="username">{user.username}</h3>
-              <p className={`user-status-text ${onlineStatus[user.id] || user.status || 'offline'}`}>
-                {onlineStatus[user.id] === 'online' ? 'Online' : 'Offline'}
+              <p className={`user-status-text ${user.status || 'offline'}`}>
+                {user.status === 'online' ? 'Online' : 'Offline'}
               </p>
             </div>
           </div>

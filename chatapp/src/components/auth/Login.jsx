@@ -34,6 +34,18 @@ const handleLogin = async (e) => {
     const { data: { session }, error1 } = await supabase.auth.getSession();
     console.log('Session5:', session);
 
+    // Set user status to online before navigation
+    if (session?.user?.id) {
+      const { error: statusError } = await supabase
+        .from('users')
+        .update({ status: 'online' })
+        .eq('id', session.user.id);
+
+      if (statusError) {
+        console.error('Error updating status:', statusError);
+      }
+    }
+
     navigate('/chat');
   } catch (error) {
     toast.error(error.message);

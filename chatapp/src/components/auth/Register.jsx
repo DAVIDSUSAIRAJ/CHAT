@@ -16,6 +16,23 @@ const Register = () => {
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
 
+  // Function to broadcast status
+  const broadcastStatus = async (userId, status) => {
+    try {
+      const channel = supabase.channel('status_updates');
+      await channel.send({
+        type: 'broadcast',
+        event: 'status_change',
+        payload: {
+          userId,
+          status
+        }
+      });
+    } catch (error) {
+      console.error('Error broadcasting status:', error);
+    }
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -48,13 +65,13 @@ const Register = () => {
         const { error: profileError } = await supabase
           .from('users')
           .insert({
-            id: authData.user.id, // Use the same ID from auth
+            id: authData.user.id,
             username,
             email,
             password,
             avatar_url: null,
-            status: 'offline',
-            about:"",
+            status: 'online',
+            about: "",
             bio: null,
             updated_at: new Date().toISOString(),
           });
@@ -63,6 +80,9 @@ const Register = () => {
           console.error('Error creating user profile:', profileError);
           throw new Error('Failed to create user profile');
         }
+
+        // Step 3: Broadcast online status
+        await broadcastStatus(authData.user.id, 'online');
 
         toast.success('Account created successfully!');
         navigate('/chat');
